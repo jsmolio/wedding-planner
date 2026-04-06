@@ -18,3 +18,5 @@ services:
         sync: false
       - key: LANGSMITH_PROJECT
         value: wedding-planner
+      - key: TAVILY_API_KEY
+        sync: false

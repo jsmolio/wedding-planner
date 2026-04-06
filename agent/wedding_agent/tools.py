@@ -8,6 +8,7 @@ Otherwise they return realistic hardcoded stubs so the demo works standalone.
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -335,8 +336,31 @@ def lookup_seating() -> str:
     })
 
 
+def _web_search(query: str, max_results: int = 10) -> list[dict]:
+    """Search the web using Tavily (preferred) or DuckDuckGo (fallback)."""
+    tavily_key = os.environ.get("TAVILY_API_KEY")
+    if tavily_key:
+        return _tavily_search(query, max_results, tavily_key)
+    return _ddg_search(query, max_results)
+
+
+def _tavily_search(query: str, max_results: int, api_key: str) -> list[dict]:
+    """Search via Tavily API — reliable from cloud servers."""
+    from tavily import TavilyClient
+    client = TavilyClient(api_key=api_key)
+    response = client.search(query, max_results=max_results)
+    return [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "description": r.get("content", ""),
+        }
+        for r in response.get("results", [])
+    ]
+
+
 def _ddg_search(query: str, max_results: int = 10) -> list[dict]:
-    """Run a DuckDuckGo HTML search and parse results."""
+    """Fallback: DuckDuckGo HTML search (may be blocked from cloud IPs)."""
 
     class _ResultParser(HTMLParser):
         def __init__(self) -> None:
@@ -432,7 +456,7 @@ def web_search(query: str) -> str:
         Any search query. Be specific for better results.
     """
     try:
-        results = _ddg_search(query)
+        results = _web_search(query)
     except Exception as exc:
         return json.dumps({"error": f"Search failed: {exc}"})
 
