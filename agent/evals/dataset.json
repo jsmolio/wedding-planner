@@ -49,5 +49,27 @@
     "input": "What should I do about seating for elderly guests?",
     "expected_tool": "search_wedding_knowledge",
     "reference_contains": "mobility"
+  },
+  {
+    "input": "Find me wedding venues in Colorado",
+    "expected_tool": "web_search",
+    "reference_contains": "Colorado",
+    "required_tools": ["lookup_venues", "lookup_budget", "web_search", "fetch_page"],
+    "min_tool_calls": {"web_search": 2, "fetch_page": 3},
+    "expect_images": true
+  },
+  {
+    "input": "Show me outdoor mountain wedding venues near Denver with pricing",
+    "expected_tool": "web_search",
+    "reference_contains": "",
+    "required_tools": ["lookup_venues", "web_search", "fetch_page"],
+    "min_tool_calls": {"fetch_page": 3},
+    "expect_images": true
+  },
+  {
+    "input": "What venues are we considering and how do they compare to our budget?",
+    "expected_tool": "lookup_venues",
+    "reference_contains": "",
+    "required_tools": ["lookup_venues", "lookup_budget"]
   }
 ]

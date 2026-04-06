@@ -1,6 +1,8 @@
-# Wedding Planner — AI Agent
+# Wedding Planner
 
-A conversational wedding-planning assistant built with **LangGraph**, **LangChain**, and **LangSmith**. Ask about guest lists, budgets, timelines, and etiquette — the agent queries structured data and a knowledge base to give contextual answers, and requests confirmation before performing any write operations.
+A full-stack wedding planning app with an integrated AI assistant. Manage guests, venues, budgets, seating, and checklists through the UI, or let the AI agent handle it for you via chat.
+
+Built with **React** + **Vite** (frontend), **FastAPI** + **LangGraph** (agent), and **Supabase** (database + auth).
 
 ---
 
@@ -8,69 +10,67 @@ A conversational wedding-planning assistant built with **LangGraph**, **LangChai
 
 ### Prerequisites
 
+- Node.js 18+
 - Python 3.11+
 - An [OpenAI API key](https://platform.openai.com/api-keys)
-- A [LangSmith API key](https://smith.langchain.com/) (free tier works)
+- A [Supabase project](https://supabase.com) (for data persistence)
+- (Optional) A [LangSmith API key](https://smith.langchain.com/) for tracing
 
-### Option A — Run locally
+### Setup
 
 ```bash
+# Install frontend dependencies
+npm install
+
+# Install agent dependencies
 cd agent
-cp .env.example .env
-```
-
-Open `.env` and paste in your `OPENAI_API_KEY` and `LANGSMITH_API_KEY`.
-
-Then install and run:
-
-```bash
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-
-# Install the package
 pip install -e .
+cd ..
 
-# Start the server
-python -m wedding_agent.server
+# Configure the agent
+cp agent/.env.example agent/.env
+# Edit agent/.env with your OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 ```
 
-Open **http://localhost:8000** in your browser. You'll see a chat interface where you can ask the agent about guest lists, budgets, checklists, and wedding etiquette.
-
-### Option B — Run with Docker
+### Run
 
 ```bash
-cd agent
-cp .env.example .env
-# Edit .env with your API keys
-docker compose up --build
+npm run dev
 ```
 
-Open **http://localhost:8000**.
+This starts both the frontend (http://localhost:5173) and the agent server (port 8000) together. The frontend proxies agent requests through Vite, so everything is accessed at **http://localhost:5173**.
+
+To run just the frontend: `npm run dev:fe`
 
 ### Run evaluations
-
-With the virtual environment activated:
 
 ```bash
 cd agent
 python -m evals.run_evals
 ```
 
-Results are pushed to your LangSmith project (requires `LANGSMITH_API_KEY` in `.env`). The eval suite covers tool routing, answer quality, and PII guardrails.
-
-> **Note:** The `agent/` directory contains the full agent application. The root-level React frontend is a separate UI prototype and is **not required** to run the agent.
+Results are pushed to LangSmith. The eval suite covers tool routing, answer quality, multi-step venue search flows, and PII guardrails.
 
 ---
 
 ## Architecture
 
-### Graph diagram
+### Frontend
+
+React 19 + TypeScript + Tailwind CSS v4 + React Router v7.
+
+**Pages:** Dashboard, Guests, RSVPs, Venues, Seating, Budget, Checklist, Settings
+
+**AI Chat Panel:** A resizable slide-in panel accessible from any page via the floating action button. Supports streaming responses, markdown rendering with image galleries, lightbox image viewing, and human-in-the-loop confirmation dialogs for write operations. Pages can open the chat with a pre-filled assistant message via `ChatContext` (e.g. the "Find Venues" button opens the chat and asks the user about their preferences).
+
+### Agent
+
+A LangGraph state machine powered by **GPT-4.1** with ReAct-style reasoning.
 
 ```mermaid
 graph TD
     START([START]) --> guardrails[guardrails - PII redaction]
-    guardrails --> agent[agent - GPT-4o-mini]
+    guardrails --> agent[agent - GPT-4.1]
     agent --> route{route_tools}
     route -->|no tool calls| END([END])
     route -->|read tools| read_tools[read_tools]
@@ -81,36 +81,15 @@ graph TD
     write_tools --> agent
 ```
 
-### State
+The agent iterates through **Thought -> Action -> Observation** loops, calling multiple tools across multiple rounds to build comprehensive answers. For example, a venue search triggers: lookup budget -> lookup guests -> web search -> fetch individual venue pages -> cross-reference -> present curated results with images.
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `messages` | `list[AnyMessage]` | Full conversation history (LangGraph `add_messages` reducer) |
-| `pii_detected` | `bool` | Set by guardrails when PII is found and redacted |
+### Authentication
 
-### Nodes
+The frontend sends the user's Supabase JWT in the `Authorization` header. The agent server verifies the token, resolves the user's `wedding_id` via the `wedding_members` table, and scopes all tool queries to that wedding. No wedding data is ever passed from the client.
 
-| Node | Role |
-|------|------|
-| **guardrails** | Regex-based PII scanner. Detects emails, phone numbers, SSNs, and credit-card numbers. Redacts in-place before the message reaches the LLM. |
-| **agent** | Calls GPT-4o-mini with tools bound. Decides which tools to invoke (or to respond directly). |
-| **read_tools** | Executes read-only lookups — guest list, budget, checklist, and RAG knowledge search. |
-| **human_review** | Uses LangGraph `interrupt()` to pause the graph. The server returns a confirmation prompt to the UI; the user approves or rejects. |
-| **write_tools** | Executes write operations (RSVP updates, expense recording) only after user approval. |
+### Data separation
 
-### Routing logic
-
-After the agent generates a response:
-
-1. **No tool calls** - END (return response to user).
-2. **Only read tools** - `read_tools` - back to agent (loop).
-3. **Any write tool** - `human_review` (interrupt) - if approved, `write_tools` - agent; if rejected - END with cancellation message.
-
-### Checkpointing
-
-The graph is compiled with `MemorySaver` so:
-- Conversations persist across turns within a thread.
-- `interrupt()` can pause and resume correctly for human-in-the-loop.
+All data tables use `wedding_id` foreign keys. Supabase RLS policies enforce row-level access via a `user_has_wedding_access()` function. The agent uses a service-role key (bypassing RLS) but derives the wedding ID server-side from the authenticated user.
 
 ---
 
@@ -121,80 +100,32 @@ The graph is compiled with `MemorySaver` so:
 | `lookup_guests` | Read | Guest count, RSVP breakdown, dietary restrictions |
 | `lookup_budget` | Read | Budget totals and per-category spending |
 | `lookup_checklist` | Read | Completed/upcoming planning tasks |
-| `search_wedding_knowledge` | Read (RAG) | Semantic search over markdown knowledge base |
+| `lookup_venues` | Read | Saved venues with details and selection status |
+| `lookup_seating` | Read | Seating tables, assignments, unassigned guests |
+| `web_search` | Read | General-purpose web search (DuckDuckGo) |
+| `fetch_page` | Read | Fetch a URL for text content and images |
+| `search_wedding_knowledge` | Read (RAG) | Semantic search over wedding advice knowledge base |
 | `update_guest_rsvp` | Write | Update a guest's RSVP status |
 | `add_budget_expense` | Write | Record a new expense |
+| `add_venue` | Write | Add a venue to the saved list |
 
-All tools support two modes:
-
-- **Live mode** — when `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_WEDDING_ID` are set in `.env`, tools query and write to the real Supabase database (guests, budget_categories, budget_expenses, checklist_items tables).
-- **Stub mode** — when Supabase is not configured, tools return realistic hardcoded data so the demo works standalone with only an OpenAI key.
-
----
-
-## RAG pipeline
-
-The knowledge base lives in `agent/knowledge/` as markdown files:
-
-- **budget_tips.md** — 50/30/20 rule, negotiation tips, off-peak savings
-- **etiquette.md** — invitations, plus-ones, seating, gifts, speeches
-- **timeline.md** — month-by-month planning checklist
-
-At startup, documents are chunked (500 chars, 50 overlap) with `RecursiveCharacterTextSplitter`, embedded with OpenAI's `text-embedding-3-small`, and stored in an in-memory vector store. The `search_wedding_knowledge` tool runs similarity search (k=3) and returns passages with source attribution.
-
----
-
-## Guardrails
-
-The `guardrails` node runs before the LLM on every turn. It uses regex patterns to detect and redact:
-
-| PII type | Example | Replacement |
-|----------|---------|-------------|
-| Email | `sarah@example.com` | `[REDACTED_EMAIL]` |
-| SSN | `123-45-6789` | `[REDACTED_SSN]` |
-| Credit card | `4111 1111 1111 1111` | `[REDACTED_CARD]` |
-| Phone | `(555) 123-4567` | `[REDACTED_PHONE]` |
-
-When PII is detected, the `pii_detected` state flag is set, and the system prompt instructs the LLM to briefly acknowledge the redaction.
-
----
-
-## LangSmith tracing
-
-All graph runs are traced to LangSmith with:
-- `run_name: "wedding_planner_chat"` for API calls
-- `run_name: "eval_run"` for evaluations
-- Tags: `["wedding-planner", "api"]` or `["eval"]`
-- Thread ID in metadata for cross-turn correlation
-
-Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `.env` to enable.
+Write tools trigger a human-in-the-loop confirmation dialog before executing.
 
 ---
 
 ## Evaluations
 
-The eval suite (`agent/evals/`) contains 10 test cases covering:
+The eval suite (`agent/evals/`) contains 13 test cases:
 
-| Category | # Tests | What's checked |
-|----------|---------|----------------|
-| Tool routing | 7 | Agent calls the correct tool for data vs. advice questions |
-| Answer quality | 10 | Response contains expected facts/keywords |
-| PII guardrails | 1 | Email in input is redacted; agent acknowledges it |
+| Category | What's checked |
+|----------|----------------|
+| Tool routing | Agent calls the correct tool for the question |
+| Answer quality | Response contains expected facts/keywords |
+| Multi-step flows | Venue search calls lookup_venues + web_search + fetch_page in sequence |
+| Image presence | Venue results include markdown images |
+| PII guardrails | Email in input is redacted |
 
-Evaluators:
-- **correct_tool** — did the agent call the expected tool?
-- **answer_contains** — does the answer include the expected substring?
-- **pii_handled** — for guardrails tests, was PII properly redacted?
-
----
-
-## Streaming
-
-The chat UI uses Server-Sent Events (SSE) for real-time token streaming. The server's `/chat` endpoint accepts `stream: true` and returns an SSE stream with three event types:
-
-- `token` — a chunk of the agent's response
-- `confirm` — a human-in-the-loop confirmation request
-- `done` — stream complete
+Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`, `min_tool_calls`, `has_images`, `excludes_content`.
 
 ---
 
@@ -204,50 +135,59 @@ The chat UI uses Server-Sent Events (SSE) for real-time token streaming. The ser
 
 **Why separate read/write tool nodes?** Rather than interrupting on every tool call, the graph only pauses for write operations. This keeps the UX fast for lookups while adding a safety gate for mutations — a pattern that maps well to real business apps.
 
+**Why GPT-4.1 over GPT-4o-mini?** The agent uses ReAct-style multi-round reasoning (search -> fetch pages -> cross-reference budget -> present results). GPT-4o-mini took shortcuts and skipped rounds. GPT-4.1 follows multi-step instructions reliably without needing tool-level hacks.
+
+**Why general-purpose web_search + fetch_page instead of specialized venue tools?** Early iterations had rigid tools like `search_venues` and `scrape_venue_page` with baked-in logic. Flexible tools + good ReAct reasoning produces better results — the agent decides how to chain them based on what it learns at each step.
+
 **Why regex for PII, not an LLM?** Regex is deterministic, fast, and has zero cost. For a demo it covers the most common patterns. In production I'd layer in a more sophisticated approach (e.g., Presidio or an LLM-based classifier) for edge cases.
 
 **Why MemorySaver, not a database?** For a demo, in-memory checkpointing keeps setup simple. The interface is identical to `SqliteSaver` or `PostgresSaver`, so swapping is a one-line change.
 
-**Why dual-mode tools (live + stubs)?** The tools query Supabase when configured, but fall back to stubs when it's not. This means reviewers can run the demo with just an OpenAI key, while the same code also works against a real database. The service-role key bypasses RLS so the agent doesn't need user-level auth.
+**Why server-side wedding ID resolution?** The frontend sends the user's Supabase JWT, and the server resolves the wedding ID via `wedding_members`. This prevents a malicious client from querying another user's wedding data, even though the agent uses a service-role key that bypasses RLS.
 
 ---
 
 ## What I'd improve with more time
 
 - **Persistent checkpointing** — swap `MemorySaver` for `PostgresSaver` so conversations survive restarts.
-- **User-scoped auth** — tie the agent to the logged-in user's session instead of a service-role key.
 - **Richer RAG** — add more knowledge docs, use hybrid search (BM25 + semantic), and add a reranker.
 - **Multi-turn eval scenarios** — test conversation flows, not just single-turn Q&A.
 - **LLM-as-judge evaluator** — assess answer quality and tone beyond substring matching.
 - **Presidio-based PII detection** — more robust than regex for edge cases.
-- **Authentication** — tie threads to user sessions.
-- **Observability dashboard** — surface LangSmith metrics in the UI for the demo.
+- **Observability dashboard** — surface LangSmith metrics in the UI.
+- **More write tools** — update checklist items, manage seating assignments, edit guest details from chat.
 
 ---
 
 ## Project structure
 
 ```
-agent/
-├── knowledge/                  # Markdown knowledge base for RAG
-│   ├── budget_tips.md
-│   ├── etiquette.md
-│   └── timeline.md
-├── evals/
-│   ├── dataset.json            # 10 eval examples
-│   └── run_evals.py            # LangSmith evaluation runner
-├── wedding_agent/
-│   ├── __init__.py
-│   ├── graph.py                # LangGraph definition (5 nodes, checkpointed)
-│   ├── guardrails.py           # PII detection and redaction
-│   ├── rag.py                  # RAG pipeline (embed + search)
-│   ├── server.py               # FastAPI server (REST + SSE streaming)
-│   ├── state.py                # Agent state definition
-│   ├── tools.py                # Read + write tool stubs
-│   └── static/
-│       └── index.html          # Chat UI with streaming + confirmation
-├── .env.example
-├── pyproject.toml
-├── Dockerfile
-└── docker-compose.yml
+wedding-planner/
+├── src/                            # React frontend
+│   ├── components/
+│   │   ├── chat/                   # ChatPanel, ChatFab
+│   │   ├── layout/                 # AppLayout, Sidebar, Header
+│   │   ├── ui/                     # Reusable components
+│   │   └── ...                     # Feature components
+│   ├── hooks/                      # useChat, useSupabaseQuery
+│   ├── lib/                        # chatClient, queries, formatters
+│   ├── contexts/                   # AuthContext, WeddingContext, ChatContext
+│   ├── pages/                      # Route pages
+│   └── types/                      # TypeScript interfaces
+├── agent/
+│   ├── wedding_agent/
+│   │   ├── graph.py                # LangGraph definition
+│   │   ├── tools.py                # Read + write tools
+│   │   ├── server.py               # FastAPI server (REST + SSE)
+│   │   ├── guardrails.py           # PII detection and redaction
+│   │   ├── rag.py                  # RAG pipeline
+│   │   ├── db.py                   # Supabase client
+│   │   └── state.py                # Agent state definition
+│   ├── knowledge/                  # Markdown knowledge base for RAG
+│   ├── evals/                      # LangSmith evaluation suite
+│   ├── pyproject.toml
+│   └── Dockerfile
+├── supabase/                       # Database migrations
+├── vite.config.ts                  # Vite config with agent proxy
+└── package.json                    # npm scripts (dev runs both servers)
 ```

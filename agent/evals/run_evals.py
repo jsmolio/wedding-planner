@@ -53,9 +53,11 @@ def predict(inputs: dict) -> dict:
 
     # Collect tool names the agent called
     tools_called: list[str] = []
+    tool_call_count: dict[str, int] = {}
     for msg in messages:
         for tc in getattr(msg, "tool_calls", []) or []:
             tools_called.append(tc["name"])
+            tool_call_count[tc["name"]] = tool_call_count.get(tc["name"], 0) + 1
 
     final_answer = messages[-1].content
 
@@ -65,10 +67,15 @@ def predict(inputs: dict) -> dict:
         for marker in ["[REDACTED_EMAIL]", "[REDACTED_PHONE]", "[REDACTED_SSN]"]
     )
 
+    # Check for markdown images
+    has_images = "![" in final_answer and "](" in final_answer
+
     return {
         "answer": final_answer,
         "tools_called": tools_called,
+        "tool_call_count": tool_call_count,
         "pii_redacted": pii_in_answer or "redact" in final_answer.lower(),
+        "has_images": has_images,
     }
 
 
@@ -98,6 +105,40 @@ def pii_handled(outputs: dict, reference_outputs: dict) -> bool:
     return outputs.get("pii_redacted", False)
 
 
+def multi_tool_flow(outputs: dict, reference_outputs: dict) -> bool:
+    """Score 1 if the agent called all required tools in a multi-step flow."""
+    required = reference_outputs.get("required_tools")
+    if not required:
+        return True  # Not a multi-tool test
+    called = set(outputs.get("tools_called", []))
+    return all(tool in called for tool in required)
+
+
+def min_tool_calls(outputs: dict, reference_outputs: dict) -> bool:
+    """Score 1 if a specific tool was called at least N times."""
+    checks = reference_outputs.get("min_tool_calls")
+    if not checks:
+        return True
+    counts = outputs.get("tool_call_count", {})
+    return all(counts.get(tool, 0) >= n for tool, n in checks.items())
+
+
+def has_images(outputs: dict, reference_outputs: dict) -> bool:
+    """Score 1 if the answer contains markdown images (when required)."""
+    if not reference_outputs.get("expect_images"):
+        return True
+    return outputs.get("has_images", False)
+
+
+def excludes_content(outputs: dict, reference_outputs: dict) -> bool:
+    """Score 1 if the answer does NOT contain a forbidden substring."""
+    forbidden = reference_outputs.get("must_not_contain")
+    if not forbidden:
+        return True
+    answer = outputs.get("answer", "").lower()
+    return all(f.lower() not in answer for f in forbidden)
+
+
 # ── Dataset setup ───────────────────────────────────────────────────────────
 
 
@@ -115,13 +156,18 @@ def ensure_dataset(client: Client) -> str:
 
     if len(existing) < len(raw):
         for ex in raw:
+            outputs = {
+                "expected_tool": ex.get("expected_tool", ""),
+                "reference_contains": ex.get("reference_contains", ""),
+                "test_guardrails": ex.get("test_guardrails", False),
+                "required_tools": ex.get("required_tools"),
+                "min_tool_calls": ex.get("min_tool_calls"),
+                "expect_images": ex.get("expect_images", False),
+                "must_not_contain": ex.get("must_not_contain"),
+            }
             client.create_example(
                 inputs={"question": ex["input"]},
-                outputs={
-                    "expected_tool": ex["expected_tool"],
-                    "reference_contains": ex["reference_contains"],
-                    "test_guardrails": ex.get("test_guardrails", False),
-                },
+                outputs=outputs,
                 dataset_id=dataset.id,
             )
 
@@ -138,7 +184,15 @@ def main() -> None:
     results = evaluate(
         predict,
         data=dataset_name,
-        evaluators=[correct_tool, answer_contains, pii_handled],
+        evaluators=[
+            correct_tool,
+            answer_contains,
+            pii_handled,
+            multi_tool_flow,
+            min_tool_calls,
+            has_images,
+            excludes_content,
+        ],
         experiment_prefix="wedding-planner",
     )
     print(results)

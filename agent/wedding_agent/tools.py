@@ -8,7 +8,11 @@ Otherwise they return realistic hardcoded stubs so the demo works standalone.
 from __future__ import annotations
 
 import json
+import re
+import urllib.parse
+import urllib.request
 from collections import Counter
+from html.parser import HTMLParser
 
 from langchain_core.tools import tool
 
@@ -217,6 +221,276 @@ def lookup_checklist() -> str:
     )
 
 
+@tool
+def lookup_venues() -> str:
+    """Look up venues being considered for the wedding.
+
+    Returns venue names, addresses, capacity, cost, contact info,
+    packages, and which venue (if any) is currently selected.
+    """
+    if not is_live():
+        return _stub_venues()
+
+    rows = (
+        _sb()
+        .table("venues")
+        .select("name, address, capacity, cost, contact_name, contact_email, contact_phone, notes, website_url, packages, is_selected")
+        .eq("wedding_id", _wid())
+        .order("created_at")
+        .execute()
+        .data
+    )
+
+    selected = next((r["name"] for r in rows if r.get("is_selected")), None)
+
+    venues = [
+        {
+            "name": r["name"],
+            "address": r.get("address") or None,
+            "capacity": r.get("capacity"),
+            "cost": float(r["cost"]) if r.get("cost") else None,
+            "contact": {
+                "name": r.get("contact_name") or None,
+                "email": r.get("contact_email") or None,
+                "phone": r.get("contact_phone") or None,
+            },
+            "website": r.get("website_url") or None,
+            "packages": r.get("packages") or [],
+            "notes": r.get("notes") or None,
+            "selected": bool(r.get("is_selected")),
+        }
+        for r in rows
+    ]
+
+    return json.dumps({
+        "total_venues": len(venues),
+        "selected_venue": selected,
+        "venues": venues,
+    })
+
+
+@tool
+def lookup_seating() -> str:
+    """Look up the seating arrangement for the wedding.
+
+    Returns tables (name, shape, capacity) and which guests are
+    assigned to each table.  Also lists unassigned guests.
+    """
+    if not is_live():
+        return _stub_seating()
+
+    tables = (
+        _sb()
+        .table("seating_tables")
+        .select("id, name, shape, capacity")
+        .eq("wedding_id", _wid())
+        .order("created_at")
+        .execute()
+        .data
+    )
+
+    guests = (
+        _sb()
+        .table("guests")
+        .select("full_name, table_id, seat_number, rsvp_status")
+        .eq("wedding_id", _wid())
+        .order("full_name")
+        .execute()
+        .data
+    )
+
+    guests_by_table: dict[str, list] = {}
+    unassigned = []
+    for g in guests:
+        if g.get("table_id"):
+            guests_by_table.setdefault(g["table_id"], []).append(g)
+        else:
+            unassigned.append({"name": g["full_name"], "rsvp": g["rsvp_status"]})
+
+    table_data = []
+    for t in tables:
+        seated = guests_by_table.get(t["id"], [])
+        table_data.append({
+            "name": t["name"],
+            "shape": t["shape"],
+            "capacity": t["capacity"],
+            "seated": len(seated),
+            "guests": [
+                {"name": g["full_name"], "seat": g.get("seat_number")}
+                for g in seated
+            ],
+        })
+
+    total_capacity = sum(t["capacity"] for t in tables)
+    total_seated = sum(len(guests_by_table.get(t["id"], [])) for t in tables)
+
+    return json.dumps({
+        "total_tables": len(tables),
+        "total_capacity": total_capacity,
+        "total_seated": total_seated,
+        "unassigned_guests": len(unassigned),
+        "tables": table_data,
+        "unassigned": unassigned,
+    })
+
+
+def _ddg_search(query: str, max_results: int = 10) -> list[dict]:
+    """Run a DuckDuckGo HTML search and parse results."""
+
+    class _ResultParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.results: list[dict] = []
+            self._in_title = False
+            self._in_snippet = False
+            self._cur: dict = {}
+
+        def handle_starttag(self, tag: str, attrs: list) -> None:
+            d = dict(attrs)
+            if tag == "a" and "result__a" in d.get("class", ""):
+                self._in_title = True
+                raw = d.get("href", "")
+                m = re.search(r"uddg=([^&]+)", raw)
+                self._cur = {"url": urllib.parse.unquote(m.group(1)) if m else raw}
+            if tag == "a" and "result__snippet" in d.get("class", ""):
+                self._in_snippet = True
+                self._cur.setdefault("description", "")
+
+        def handle_data(self, data: str) -> None:
+            if self._in_title:
+                self._cur["title"] = self._cur.get("title", "") + data
+            if self._in_snippet:
+                self._cur["description"] = self._cur.get("description", "") + data
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "a" and self._in_title:
+                self._in_title = False
+            if tag == "a" and self._in_snippet:
+                self._in_snippet = False
+                self.results.append(self._cur)
+                self._cur = {}
+
+    encoded = urllib.parse.quote(query)
+    url = f"https://html.duckduckgo.com/html/?q={encoded}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    resp = urllib.request.urlopen(req, timeout=15)
+    html = resp.read().decode()
+
+    parser = _ResultParser()
+    parser.feed(html)
+    return parser.results[:max_results]
+
+
+_AGGREGATOR_DOMAINS = {
+    "weddingwire.com", "theknot.com", "wedding-spot.com", "zola.com",
+    "weddingrule.com", "hitched.co.uk", "bridestory.com",
+}
+
+
+def _is_aggregator(url: str) -> bool:
+    try:
+        domain = urllib.parse.urlparse(url).netloc.lower().replace("www.", "")
+        return any(agg in domain for agg in _AGGREGATOR_DOMAINS)
+    except Exception:
+        return False
+
+
+def _get_saved_venue_names() -> list[str]:
+    """Return names of venues already saved for this wedding."""
+    if not is_live():
+        return []
+    try:
+        rows = (
+            _sb()
+            .table("venues")
+            .select("name")
+            .eq("wedding_id", _wid())
+            .execute()
+            .data
+        )
+        return [r["name"] for r in rows]
+    except Exception:
+        return []
+
+
+@tool
+def web_search(query: str) -> str:
+    """Search the internet. Use this for any question that needs live web data.
+
+    You can call this multiple times with different queries to refine
+    results — e.g. first search broadly, then search for a specific
+    venue name to find its website.
+
+    Parameters
+    ----------
+    query : str
+        Any search query. Be specific for better results.
+    """
+    try:
+        results = _ddg_search(query)
+    except Exception as exc:
+        return json.dumps({"error": f"Search failed: {exc}"})
+
+    if not results:
+        return json.dumps({"results": [], "message": "No results found. Try rephrasing."})
+
+    # Separate direct sites from aggregators
+    direct = [r for r in results if not _is_aggregator(r.get("url", ""))]
+    aggregators = [r for r in results if _is_aggregator(r.get("url", ""))]
+
+    # Include saved venues so the agent can filter duplicates
+    saved = _get_saved_venue_names()
+
+    response: dict = {
+        "result_count": len(results),
+        "direct_results": direct,
+        "aggregator_results": aggregators,
+    }
+    if saved:
+        response["already_saved_venues"] = saved
+    return json.dumps(response)
+
+
+@tool
+def fetch_page(url: str) -> str:
+    """Fetch a webpage and return its text content and images.
+
+    Use this to get detailed information from a URL — prices, capacity,
+    descriptions, photos, contact info, etc.  You can call this multiple
+    times on different URLs.
+
+    Parameters
+    ----------
+    url : str
+        The URL to fetch.
+    """
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urllib.request.urlopen(req, timeout=15)
+        raw = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        return json.dumps({"error": f"Could not fetch page: {exc}"})
+
+    # Extract text
+    text = re.sub(r"<script[^>]*>.*?</script>", " ", raw, flags=re.S)
+    text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()[:8000]
+
+    # Extract all images — let the agent decide which ones showcase the venue
+    images: list[str] = []
+    for og in re.findall(r'(?:property|name)="og:image"\s+content="([^"]+)"', raw):
+        if og not in images:
+            images.append(og)
+    for src in re.findall(r'<img[^>]+src="(https?://[^"]+)"[^>]*>', raw):
+        if src not in images:
+            images.append(src)
+        if len(images) >= 15:
+            break
+
+    return json.dumps({"url": url, "text": text, "images": images})
+
+
 # ── Write tools (trigger human-in-the-loop confirmation) ──────────────────
 
 
@@ -321,6 +595,75 @@ def add_budget_expense(category: str, description: str, amount: float) -> str:
     })
 
 
+@tool
+def add_venue(
+    name: str,
+    address: str = "",
+    capacity: int | None = None,
+    cost: float | None = None,
+    website_url: str = "",
+    notes: str = "",
+    contact_name: str = "",
+    contact_email: str = "",
+    contact_phone: str = "",
+    photo_urls: list[str] | None = None,
+) -> str:
+    """Add a venue to the wedding's venue list.
+
+    Use this after suggesting venues (e.g. from search_venues results)
+    when the user wants to save one for consideration.
+
+    Parameters
+    ----------
+    name : str
+        Name of the venue.
+    address : str
+        Full address of the venue.
+    capacity : int or None
+        Maximum guest capacity.
+    cost : float or None
+        Estimated cost / starting price.
+    website_url : str
+        Website URL for the venue.
+    notes : str
+        Any notes about the venue (style, highlights, etc.).
+    contact_name : str
+        Contact person name.
+    contact_email : str
+        Contact email address.
+    contact_phone : str
+        Contact phone number.
+    photo_urls : list[str] or None
+        Image URLs from the venue's website.
+    """
+    if not is_live():
+        return json.dumps({
+            "added": True,
+            "venue": name,
+            "message": f"'{name}' has been added to your venue list.",
+        })
+
+    _sb().table("venues").insert({
+        "wedding_id": _wid(),
+        "name": name,
+        "address": address,
+        "capacity": capacity,
+        "cost": cost,
+        "website_url": website_url,
+        "notes": notes,
+        "contact_name": contact_name,
+        "contact_email": contact_email,
+        "contact_phone": contact_phone,
+        "photo_urls": photo_urls or [],
+    }).execute()
+
+    return json.dumps({
+        "added": True,
+        "venue": name,
+        "message": f"'{name}' has been added to your venue list.",
+    })
+
+
 # ── Stub data (used when Supabase is not configured) ─────────────────────
 
 
@@ -394,11 +737,44 @@ def _stub_checklist() -> str:
     })
 
 
+def _stub_venues() -> str:
+    return json.dumps({
+        "total_venues": 3,
+        "selected_venue": "Rosewood Estate",
+        "venues": [
+            {"name": "Rosewood Estate", "address": "1234 Garden Lane, Napa Valley, CA", "capacity": 200, "cost": 9500, "contact": {"name": "Sarah Miller", "email": "sarah@rosewood.com", "phone": "(707) 555-0123"}, "website": "https://rosewoodestates.com", "packages": [{"name": "Premium", "price": 12000}, {"name": "Standard", "price": 9500}], "notes": "Beautiful outdoor ceremony space", "selected": True},
+            {"name": "The Grand Ballroom", "address": "567 Main St, San Francisco, CA", "capacity": 300, "cost": 15000, "contact": {"name": "Tom Richards", "email": "events@granball.com", "phone": "(415) 555-0456"}, "website": None, "packages": [], "notes": "Downtown location, valet parking included", "selected": False},
+            {"name": "Sunset Beach Club", "address": "890 Ocean Blvd, Santa Cruz, CA", "capacity": 150, "cost": 7500, "contact": {"name": "Lisa Wong", "email": "lisa@sunsetbc.com", "phone": "(831) 555-0789"}, "website": "https://sunsetbeachclub.com", "packages": [], "notes": "Beachfront ceremony, weather-dependent", "selected": False},
+        ],
+    })
+
+
+def _stub_seating() -> str:
+    return json.dumps({
+        "total_tables": 10,
+        "total_capacity": 100,
+        "total_seated": 65,
+        "unassigned_guests": 33,
+        "tables": [
+            {"name": "Head Table", "shape": "rectangular", "capacity": 10, "seated": 8, "guests": [{"name": "Emma Wilson", "seat": 1}, {"name": "James Wilson", "seat": 2}]},
+            {"name": "Table 1", "shape": "round", "capacity": 10, "seated": 8, "guests": [{"name": "Olivia Chen", "seat": 1}, {"name": "Noah Patel", "seat": 2}]},
+            {"name": "Table 2", "shape": "round", "capacity": 10, "seated": 7, "guests": []},
+            {"name": "Table 3", "shape": "round", "capacity": 10, "seated": 6, "guests": []},
+        ],
+        "unassigned": [
+            {"name": "Charlotte Davis", "rsvp": "pending"},
+            {"name": "Isabella Nguyen", "rsvp": "pending"},
+            {"name": "Grace Foster", "rsvp": "pending"},
+        ],
+        "note": "Showing 4 of 10 tables.",
+    })
+
+
 # ── Tool groups ───────────────────────────────────────────────────────────
 
-read_tools = [lookup_guests, lookup_budget, lookup_checklist]
+read_tools = [lookup_guests, lookup_budget, lookup_checklist, lookup_venues, lookup_seating, web_search, fetch_page]
 
-write_tools = [update_guest_rsvp, add_budget_expense]
+write_tools = [update_guest_rsvp, add_budget_expense, add_venue]
 WRITE_TOOL_NAMES = {t.name for t in write_tools}
 
 all_tools = [*read_tools, *write_tools]

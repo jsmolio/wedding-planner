@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, GitCompareArrows, X, Loader2 } from 'lucide-react';
+import { Sparkles, GitCompareArrows, X, Loader2, Plus } from 'lucide-react';
 import { useWedding } from '@/contexts/WeddingContext';
+import { useChatAction } from '@/contexts/ChatContext';
 import { fetchVenues, deleteVenue, selectVenue, unselectVenue } from '@/lib/queries/venues';
 import { queryKeys } from '@/lib/queryKeys';
 import { VenueCard } from '@/components/venues/VenueCard';
-import { VenueForm } from '@/components/venues/VenueForm';
+import { VenueDetail } from '@/components/venues/VenueDetail';
 import { VenueCompare } from '@/components/venues/VenueCompare';
 import { Button } from '@/components/ui/Button';
 import type { Venue } from '@/types/database';
@@ -13,12 +14,11 @@ import type { Venue } from '@/types/database';
 export default function VenuesPage() {
   const { weddingId } = useWedding();
   const queryClient = useQueryClient();
-
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingVenue, setEditingVenue] = useState<Venue | undefined>(undefined);
+  const { openChat } = useChatAction();
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [detailVenue, setDetailVenue] = useState<Venue | null>(null);
 
   const {
     data: venues = [],
@@ -46,13 +46,7 @@ export default function VenuesPage() {
   });
 
   const handleAdd = () => {
-    setEditingVenue(undefined);
-    setFormOpen(true);
-  };
-
-  const handleEdit = (venue: Venue) => {
-    setEditingVenue(venue);
-    setFormOpen(true);
+    openChat("I'd love to help you find the perfect venue! What location are you considering, and do you have a style in mind? (e.g. outdoor, rustic, modern, mountain, etc.)");
   };
 
   const handleDelete = (venue: Venue) => {
@@ -141,8 +135,8 @@ export default function VenuesPage() {
             </Button>
           )}
           <Button onClick={handleAdd}>
-            <Plus className="w-4 h-4" />
-            Add Venue
+            <Sparkles className="w-4 h-4" />
+            Find Venues
           </Button>
         </div>
       </div>
@@ -194,8 +188,8 @@ export default function VenuesPage() {
             Start adding venues you are considering for your wedding.
           </p>
           <Button onClick={handleAdd}>
-            <Plus className="w-4 h-4" />
-            Add Your First Venue
+            <Sparkles className="w-4 h-4" />
+            Find Your First Venue
           </Button>
         </div>
       )}
@@ -223,7 +217,7 @@ export default function VenuesPage() {
               <div className={compareMode ? 'pointer-events-none' : ''}>
                 <VenueCard
                   venue={venue}
-                  onEdit={handleEdit}
+                  onClick={setDetailVenue}
                   onDelete={handleDelete}
                   onSelect={handleSelect}
                 />
@@ -241,13 +235,8 @@ export default function VenuesPage() {
         </div>
       )}
 
-      {/* Venue Form Modal */}
-      <VenueForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        venue={editingVenue}
-        weddingId={weddingId}
-      />
+      {/* Venue Detail Modal */}
+      <VenueDetail venue={detailVenue} onClose={() => setDetailVenue(null)} />
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirmId && (

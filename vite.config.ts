@@ -9,4 +9,12 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  server: {
+    proxy: {
+      '/api/agent': {
+        target: 'http://localhost:8000',
+        rewrite: (path) => path.replace(/^\/api\/agent/, ''),
+      },
+    },
+  },
 })

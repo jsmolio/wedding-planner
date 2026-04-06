@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n fe,agent -c cyan,magenta \"vite\" \"cd agent && python -m wedding_agent.server\"",
+    "dev:fe": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -18,6 +19,7 @@
     "@tanstack/react-query": "^5.90.21",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.577.0",
+    "marked": "^17.0.6",
     "papaparse": "^5.5.3",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
@@ -36,6 +38,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.0",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

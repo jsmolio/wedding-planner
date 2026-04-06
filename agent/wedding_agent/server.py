@@ -33,13 +33,14 @@ from dotenv import load_dotenv
 # Load .env *before* any LangChain imports so tracing env vars are picked up.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Header  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from starlette.responses import FileResponse, StreamingResponse  # noqa: E402
 
+from wedding_agent.db import get_client, set_wedding_id  # noqa: E402
 from wedding_agent.graph import graph  # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -67,6 +68,33 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+def _resolve_wedding_id(authorization: str | None) -> str | None:
+    """Verify the user's JWT and look up their wedding ID."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization[7:]
+    try:
+        # Verify the JWT with Supabase and get the user
+        sb = get_client()
+        user_resp = sb.auth.get_user(token)
+        user_id = user_resp.user.id
+
+        # Look up wedding membership
+        result = (
+            sb.table("wedding_members")
+            .select("wedding_id")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]["wedding_id"]
+    except Exception as exc:
+        print(f"[AUTH] Failed to resolve wedding_id: {exc}", flush=True)
+    return None
+
+
 class ChatResponse(BaseModel):
     reply: str | None = None
     type: str = "message"  # "message" | "confirm"
@@ -76,6 +104,7 @@ class ChatResponse(BaseModel):
 def _run_config(thread_id: str) -> dict:
     return {
         "configurable": {"thread_id": thread_id},
+        "recursion_limit": 80,
         "run_name": "wedding_planner_chat",
         "tags": ["wedding-planner", "api"],
         "metadata": {"thread_id": thread_id},
@@ -99,13 +128,18 @@ def _check_interrupt(thread_id: str) -> dict | None:
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, authorization: str | None = Header(default=None)):
     """Run the agent graph and return the final assistant message.
 
     If ``confirm`` is set, resumes a previously interrupted graph run.
     If ``stream`` is true, returns an SSE stream instead.
     """
     config = _run_config(req.thread_id)
+
+    # Resolve the wedding ID from the user's auth token
+    wedding_id = _resolve_wedding_id(authorization)
+    if wedding_id:
+        set_wedding_id(wedding_id)
 
     # ── Resume from interrupt ───────────────────────────────────────────
     if req.confirm:
@@ -136,6 +170,21 @@ async def chat(req: ChatRequest):
     return ChatResponse(reply=_extract_reply(result))
 
 
+_TOOL_LABELS = {
+    "lookup_guests": "Looking up guest list",
+    "lookup_budget": "Checking budget",
+    "lookup_checklist": "Reviewing checklist",
+    "lookup_venues": "Looking up venues",
+    "lookup_seating": "Checking seating arrangement",
+    "search_wedding_knowledge": "Searching wedding tips",
+    "web_search": "Searching the web",
+    "fetch_page": "Reading webpage",
+    "update_guest_rsvp": "Updating RSVP",
+    "add_budget_expense": "Recording expense",
+    "add_venue": "Adding venue to list",
+}
+
+
 def _stream_response(message: str, config: dict) -> StreamingResponse:
     """Return an SSE stream of token chunks."""
 
@@ -156,6 +205,18 @@ def _stream_response(message: str, config: dict) -> StreamingResponse:
                     final_text += chunk.content
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
 
+            elif kind == "on_tool_start":
+                tool_name = event["name"]
+                tool_input = event.get("data", {}).get("input", "")
+                print(f"[TOOL START] {tool_name} | input: {str(tool_input)[:200]}", flush=True)
+                label = _TOOL_LABELS.get(tool_name, tool_name)
+                yield f"data: {json.dumps({'type': 'status', 'content': label})}\n\n"
+
+            elif kind == "on_tool_end":
+                tool_output = event.get("data", {}).get("output", "")
+                print(f"[TOOL END] output: {str(tool_output)[:300]}", flush=True)
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking'})}\n\n"
+
         # After streaming completes, check for interrupt
         thread_id = config["configurable"]["thread_id"]
         interrupt_payload = _check_interrupt(thread_id)
@@ -167,6 +228,7 @@ def _stream_response(message: str, config: dict) -> StreamingResponse:
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
 
 
 @app.get("/health")

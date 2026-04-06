@@ -1,19 +1,6 @@
 import { supabase } from '@/config/supabase';
 import type { Venue, VenuePackage } from '@/types/database';
 
-export interface ScrapedVenueData {
-  name?: string;
-  address?: string;
-  capacity?: number | null;
-  cost?: number | null;
-  contact_name?: string;
-  contact_email?: string;
-  contact_phone?: string;
-  notes?: string;
-  packages?: VenuePackage[];
-  photo_urls?: string[];
-}
-
 export async function fetchVenues(weddingId: string) {
   const { data, error } = await supabase
     .from('venues')
@@ -73,14 +60,6 @@ export async function unselectVenue(venueId: string) {
     .single();
   if (error) throw error;
   return data as Venue;
-}
-
-export async function scrapeVenueWebsite(url: string): Promise<ScrapedVenueData> {
-  const { data, error } = await supabase.functions.invoke('scrape-venue', {
-    body: { url },
-  });
-  if (error) throw error;
-  return data as ScrapedVenueData;
 }
 
 export async function uploadVenuePhoto(file: File): Promise<string> {

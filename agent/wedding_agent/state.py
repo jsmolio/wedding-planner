@@ -27,3 +27,4 @@ class PlannerState(TypedDict):
 
     messages: Annotated[list[AnyMessage], add_messages]
     pii_detected: bool
+    wedding_id: str
