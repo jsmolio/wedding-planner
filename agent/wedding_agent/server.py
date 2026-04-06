@@ -257,6 +257,25 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/debug/search")
+async def debug_search():
+    """Test search — temporary diagnostic endpoint."""
+    tavily_key = os.environ.get("TAVILY_API_KEY", "")
+    has_key = bool(tavily_key)
+    result = {"tavily_key_present": has_key, "key_prefix": tavily_key[:8] + "..." if has_key else None}
+    if has_key:
+        try:
+            from tavily import TavilyClient
+            client = TavilyClient(api_key=tavily_key)
+            resp = client.search("test", max_results=1)
+            result["tavily_works"] = True
+            result["result_count"] = len(resp.get("results", []))
+        except Exception as exc:
+            result["tavily_works"] = False
+            result["tavily_error"] = str(exc)
+    return result
+
+
 def main() -> None:
     import uvicorn
 
