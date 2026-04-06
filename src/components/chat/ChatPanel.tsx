@@ -3,9 +3,9 @@ import { X, Send, Check, XCircle, AlertCircle, Paperclip, FileText, Image, Chevr
 import { ClementineLogo } from '../ui/Logo';
 import { marked } from 'marked';
 import { Lightbox } from '../ui/Lightbox';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useWedding } from '../../contexts/WeddingContext';
-import { fetchVenues } from '../../lib/queries/venues';
+import { fetchVenues, createVenue } from '../../lib/queries/venues';
 import { queryKeys } from '../../lib/queryKeys';
 import { ChatForm } from './ChatForm';
 import type { ChatMessage, FileAttachment } from '../../hooks/useChat';
@@ -102,6 +102,7 @@ export function ChatPanel({
   const [files, setFiles] = useState<FileAttachment[]>([]);
   const [showConversations, setShowConversations] = useState(false);
   const { weddingId } = useWedding();
+  const queryClient = useQueryClient();
   const { data: venues = [] } = useQuery({
     queryKey: queryKeys.venues(weddingId!),
     queryFn: () => fetchVenues(weddingId!),
@@ -140,12 +141,75 @@ export function ChatPanel({
   const handleContentClick = useCallback((e: ReactMouseEvent) => {
     const target = e.target as HTMLElement;
 
-    // Handle "Save" venue button
-    if (target.classList.contains('chat-add-venue-btn')) {
+    // Handle "Save" venue button — save directly to Supabase
+    if (target.classList.contains('chat-add-venue-btn') && weddingId) {
       const venueName = target.getAttribute('data-venue-name');
-      if (venueName) {
-        send(`Add ${venueName} to my saved venues`);
+      if (!venueName) return;
+
+      // Find the venue's section in the DOM (everything between this h3 and the next h3)
+      const header = target.closest('.chat-venue-header');
+      if (!header) return;
+
+      // Collect text content and images from sibling elements until the next venue header
+      let el = header.nextElementSibling;
+      const lines: string[] = [];
+      const photos: string[] = [];
+      while (el && !el.classList?.contains('chat-venue-header')) {
+        // Collect images from galleries
+        if (el.classList?.contains('chat-gallery')) {
+          el.querySelectorAll('img').forEach(img => {
+            if (img.src && !photos.includes(img.src)) photos.push(img.src);
+          });
+        }
+        // Collect text lines
+        const text = el.textContent?.trim();
+        if (text) lines.push(text);
+        el = el.nextElementSibling;
       }
+
+      // Parse structured data from the text lines
+      const getText = (prefix: string) => {
+        const line = lines.find(l => l.startsWith(prefix));
+        return line ? line.slice(prefix.length).trim() : '';
+      };
+      const parseCost = (s: string) => {
+        const m = s.replace(/[$,]/g, '').match(/\d+/);
+        return m ? parseFloat(m[0]) : null;
+      };
+      const parseCapacity = (s: string) => {
+        const m = s.match(/\d+/);
+        return m ? parseInt(m[0]) : null;
+      };
+
+      // Extract a link URL if present
+      const linkEl = header.parentElement?.querySelector('a[href^="http"]') as HTMLAnchorElement | null;
+
+      const venue = {
+        wedding_id: weddingId,
+        name: venueName,
+        address: getText('Location:'),
+        capacity: parseCapacity(getText('Capacity:')),
+        cost: parseCost(getText('Price:')),
+        website_url: linkEl?.href ?? getText('Website:'),
+        notes: getText('Why it fits:'),
+        photo_urls: photos,
+      };
+
+      // Disable button immediately
+      (target as HTMLButtonElement).disabled = true;
+      (target as HTMLButtonElement).textContent = 'Saving...';
+
+      createVenue(venue)
+        .then(() => {
+          (target as HTMLButtonElement).textContent = 'Saved';
+          target.classList.remove('chat-add-venue-btn');
+          target.classList.add('chat-venue-saved');
+          queryClient.invalidateQueries({ queryKey: queryKeys.venues(weddingId) });
+        })
+        .catch(() => {
+          (target as HTMLButtonElement).disabled = false;
+          (target as HTMLButtonElement).textContent = '+ Save';
+        });
       return;
     }
 
