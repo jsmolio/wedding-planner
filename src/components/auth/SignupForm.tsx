@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWedding } from '@/contexts/WeddingContext';
 import { supabase } from '@/config/supabase';
@@ -19,7 +19,6 @@ interface SignupFormData {
 export function SignupForm() {
   const { signUp } = useAuth();
   const { refreshWedding } = useWedding();
-  const navigate = useNavigate();
   const [error, setError] = useState('');
   const [settingUp, setSettingUp] = useState(false);
   const { register, handleSubmit, formState: { isSubmitting } } = useForm<SignupFormData>();
@@ -48,7 +47,8 @@ export function SignupForm() {
       if (rpcError) throw rpcError;
 
       await refreshWedding();
-      navigate('/dashboard');
+      // Full reload ensures all contexts pick up the new wedding
+      window.location.href = '/dashboard';
     } catch (err) {
       setSettingUp(false);
       setError(err instanceof Error ? err.message : 'Failed to create account');
