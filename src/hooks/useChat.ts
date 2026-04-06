@@ -200,14 +200,13 @@ export function useChat(
     // Persist user message
     saveMessage(convoId, 'user', displayText).catch(() => {});
 
-    // Auto-title: always title untitled conversations with the first user message
-    if (trimmed) {
+    // Auto-title on first user message only
+    const isFirstUserMessage = !messages.some((m) => m.role === 'user');
+    if (trimmed && isFirstUserMessage) {
       const title = trimmed.length > 40 ? trimmed.slice(0, 40) + '...' : trimmed;
       updateConversationTitle(convoId, title).catch(() => {});
       setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convoId && c.title === 'New conversation' ? { ...c, title } : c,
-        ),
+        prev.map((c) => (c.id === convoId ? { ...c, title } : c)),
       );
     }
 
