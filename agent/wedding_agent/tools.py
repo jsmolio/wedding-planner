@@ -11,6 +11,7 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import uuid as _uuid
 from collections import Counter
 from html.parser import HTMLParser
 
@@ -494,174 +495,140 @@ def fetch_page(url: str) -> str:
 # ── Write tools (trigger human-in-the-loop confirmation) ──────────────────
 
 
-@tool
-def update_guest_rsvp(guest_name: str, status: str) -> str:
-    """Update the RSVP status for a guest.
+_WRITABLE_TABLES = {
+    "guests", "venues", "budget_categories", "budget_expenses",
+    "checklist_items", "seating_tables",
+}
 
-    Parameters
-    ----------
-    guest_name : str
-        Full name of the guest.
-    status : str
-        New RSVP status — one of "accepted", "declined", or "pending".
-    """
-    if status not in ("accepted", "declined", "pending"):
-        return json.dumps({"error": f"Invalid status '{status}'. Use accepted, declined, or pending."})
+# Tables that need wedding_id injected on create
+_WEDDING_SCOPED = _WRITABLE_TABLES
 
-    if not is_live():
-        return json.dumps({
-            "updated": True,
-            "guest": guest_name,
-            "new_status": status,
-            "message": f"RSVP for {guest_name} has been updated to '{status}'.",
-        })
+# Tables where we look up by name (case-insensitive) instead of id
+_NAME_LOOKUP_TABLES = {"guests": "full_name", "venues": "name", "budget_categories": "name"}
 
-    # Find the guest by name (case-insensitive)
-    matches = (
-        _sb()
-        .table("guests")
-        .select("id, full_name")
-        .eq("wedding_id", _wid())
-        .ilike("full_name", guest_name)
-        .execute()
-        .data
-    )
 
-    if not matches:
-        return json.dumps({"error": f"No guest found with name '{guest_name}'."})
+def _find_record(table: str, identifier: str) -> dict | None:
+    """Find a record by id or name (case-insensitive)."""
+    # Try UUID first
+    try:
+        _uuid.UUID(identifier)
+        result = _sb().table(table).select("*").eq("id", identifier).execute().data
+        if result:
+            return result[0]
+    except (ValueError, AttributeError):
+        pass
 
-    guest = matches[0]
-    _sb().table("guests").update({"rsvp_status": status}).eq("id", guest["id"]).execute()
+    # Try name lookup
+    name_col = _NAME_LOOKUP_TABLES.get(table)
+    if name_col:
+        result = (
+            _sb().table(table).select("*")
+            .eq("wedding_id", _wid())
+            .ilike(name_col, identifier)
+            .execute().data
+        )
+        if result:
+            return result[0]
 
-    return json.dumps({
-        "updated": True,
-        "guest": guest["full_name"],
-        "new_status": status,
-        "message": f"RSVP for {guest['full_name']} has been updated to '{status}'.",
-    })
+    return None
 
 
 @tool
-def add_budget_expense(category: str, description: str, amount: float) -> str:
-    """Record a new expense against a budget category.
+def create_record(table: str, data: dict) -> str:
+    """Create a new record in a wedding table.
 
     Parameters
     ----------
-    category : str
-        Budget category (e.g. "Venue", "Catering", "Flowers").
-    description : str
-        Short description of the expense.
-    amount : float
-        Dollar amount of the expense.
+    table : str
+        Table name: guests, venues, budget_expenses, budget_categories,
+        checklist_items, or seating_tables.
+    data : dict
+        Fields to set. Do NOT include id or wedding_id — those are
+        added automatically. For budget_expenses, look up the
+        category_id from the category name first using lookup_budget.
     """
+    if table not in _WRITABLE_TABLES:
+        return json.dumps({"error": f"Unknown table '{table}'. Use one of: {', '.join(sorted(_WRITABLE_TABLES))}"})
+
     if not is_live():
-        return json.dumps({
-            "recorded": True,
-            "category": category,
-            "description": description,
-            "amount": amount,
-            "message": f"Recorded ${amount:,.2f} expense for '{description}' under {category}.",
-        })
+        return json.dumps({"created": True, "table": table, "data": data})
 
-    # Find the category by name (case-insensitive)
-    cats = (
-        _sb()
-        .table("budget_categories")
-        .select("id, name")
-        .eq("wedding_id", _wid())
-        .ilike("name", category)
-        .execute()
-        .data
-    )
+    row = {**data}
+    if table in _WEDDING_SCOPED:
+        row["wedding_id"] = _wid()
 
-    if not cats:
-        return json.dumps({"error": f"No budget category found matching '{category}'."})
+    # For budget_expenses, resolve category name → id if needed
+    if table == "budget_expenses" and "category" in row:
+        cat_name = row.pop("category")
+        cats = (
+            _sb().table("budget_categories").select("id, name")
+            .eq("wedding_id", _wid()).ilike("name", cat_name)
+            .execute().data
+        )
+        if not cats:
+            return json.dumps({"error": f"No budget category matching '{cat_name}'."})
+        row["category_id"] = cats[0]["id"]
 
-    cat = cats[0]
-    _sb().table("budget_expenses").insert({
-        "wedding_id": _wid(),
-        "category_id": cat["id"],
-        "description": description,
-        "actual_cost": amount,
-        "estimated_cost": amount,
-    }).execute()
-
-    return json.dumps({
-        "recorded": True,
-        "category": cat["name"],
-        "description": description,
-        "amount": amount,
-        "message": f"Recorded ${amount:,.2f} expense for '{description}' under {cat['name']}.",
-    })
+    result = _sb().table(table).insert(row).execute().data
+    return json.dumps({"created": True, "table": table, "record": result[0] if result else data})
 
 
 @tool
-def add_venue(
-    name: str,
-    address: str = "",
-    capacity: int | None = None,
-    cost: float | None = None,
-    website_url: str = "",
-    notes: str = "",
-    contact_name: str = "",
-    contact_email: str = "",
-    contact_phone: str = "",
-    photo_urls: list[str] | None = None,
-) -> str:
-    """Add a venue to the wedding's venue list.
-
-    Use this after suggesting venues (e.g. from search_venues results)
-    when the user wants to save one for consideration.
+def update_record(table: str, identifier: str, data: dict) -> str:
+    """Update an existing record in a wedding table.
 
     Parameters
     ----------
-    name : str
-        Name of the venue.
-    address : str
-        Full address of the venue.
-    capacity : int or None
-        Maximum guest capacity.
-    cost : float or None
-        Estimated cost / starting price.
-    website_url : str
-        Website URL for the venue.
-    notes : str
-        Any notes about the venue (style, highlights, etc.).
-    contact_name : str
-        Contact person name.
-    contact_email : str
-        Contact email address.
-    contact_phone : str
-        Contact phone number.
-    photo_urls : list[str] or None
-        Image URLs from the venue's website.
+    table : str
+        Table name: guests, venues, budget_expenses, budget_categories,
+        checklist_items, or seating_tables.
+    identifier : str
+        The record's id (UUID) or name (for guests, venues, categories —
+        matched case-insensitively).
+    data : dict
+        Fields to update. Only include fields you want to change.
     """
+    if table not in _WRITABLE_TABLES:
+        return json.dumps({"error": f"Unknown table '{table}'. Use one of: {', '.join(sorted(_WRITABLE_TABLES))}"})
+
     if not is_live():
-        return json.dumps({
-            "added": True,
-            "venue": name,
-            "message": f"'{name}' has been added to your venue list.",
-        })
+        return json.dumps({"updated": True, "table": table, "identifier": identifier, "data": data})
 
-    _sb().table("venues").insert({
-        "wedding_id": _wid(),
-        "name": name,
-        "address": address,
-        "capacity": capacity,
-        "cost": cost,
-        "website_url": website_url,
-        "notes": notes,
-        "contact_name": contact_name,
-        "contact_email": contact_email,
-        "contact_phone": contact_phone,
-        "photo_urls": photo_urls or [],
-    }).execute()
+    record = _find_record(table, identifier)
+    if not record:
+        return json.dumps({"error": f"No {table} record found matching '{identifier}'."})
 
-    return json.dumps({
-        "added": True,
-        "venue": name,
-        "message": f"'{name}' has been added to your venue list.",
-    })
+    _sb().table(table).update(data).eq("id", record["id"]).execute()
+    return json.dumps({"updated": True, "table": table, "record_id": record["id"], "changes": data})
+
+
+@tool
+def delete_record(table: str, identifier: str) -> str:
+    """Delete a record from a wedding table.
+
+    Parameters
+    ----------
+    table : str
+        Table name: guests, venues, budget_expenses, budget_categories,
+        checklist_items, or seating_tables.
+    identifier : str
+        The record's id (UUID) or name (for guests, venues, categories —
+        matched case-insensitively).
+    """
+    if table not in _WRITABLE_TABLES:
+        return json.dumps({"error": f"Unknown table '{table}'. Use one of: {', '.join(sorted(_WRITABLE_TABLES))}"})
+
+    if not is_live():
+        return json.dumps({"deleted": True, "table": table, "identifier": identifier})
+
+    record = _find_record(table, identifier)
+    if not record:
+        return json.dumps({"error": f"No {table} record found matching '{identifier}'."})
+
+    _sb().table(table).delete().eq("id", record["id"]).execute()
+    name_col = _NAME_LOOKUP_TABLES.get(table)
+    display = record.get(name_col, record["id"]) if name_col else record["id"]
+    return json.dumps({"deleted": True, "table": table, "record": str(display)})
 
 
 # ── Stub data (used when Supabase is not configured) ─────────────────────
@@ -774,7 +741,7 @@ def _stub_seating() -> str:
 
 read_tools = [lookup_guests, lookup_budget, lookup_checklist, lookup_venues, lookup_seating, web_search, fetch_page]
 
-write_tools = [update_guest_rsvp, add_budget_expense, add_venue]
+write_tools = [create_record, update_record, delete_record]
 WRITE_TOOL_NAMES = {t.name for t in write_tools}
 
 all_tools = [*read_tools, *write_tools]

@@ -61,11 +61,18 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+class Attachment(BaseModel):
+    name: str
+    type: str  # "text" or "image"
+    content: str  # text content or base64 data URL
+
+
 class ChatRequest(BaseModel):
     message: str | None = None
     thread_id: str = "default"
     confirm: str | None = None  # "approve" or "reject"
     stream: bool = False
+    attachments: list[Attachment] | None = None
 
 
 def _resolve_wedding_id(authorization: str | None) -> str | None:
@@ -111,6 +118,26 @@ def _run_config(thread_id: str) -> dict:
     }
 
 
+def _build_message(req: ChatRequest) -> HumanMessage:
+    """Build a HumanMessage, optionally with multimodal attachments."""
+    parts: list = []
+    text = req.message or ""
+
+    if req.attachments:
+        for att in req.attachments:
+            if att.type == "text":
+                text += f"\n\n--- Attached file: {att.name} ---\n{att.content}"
+            elif att.type == "image":
+                parts.append({"type": "image_url", "image_url": {"url": att.content}})
+                text += f"\n\n[Attached image: {att.name}]"
+
+    if parts:
+        parts.insert(0, {"type": "text", "text": text})
+        return HumanMessage(content=parts)
+
+    return HumanMessage(content=text)
+
+
 def _extract_reply(result: dict) -> str:
     """Pull the final assistant text from the graph result."""
     return result["messages"][-1].content
@@ -146,16 +173,18 @@ async def chat(req: ChatRequest, authorization: str | None = Header(default=None
         result = graph.invoke(Command(resume=req.confirm), config)
         return ChatResponse(reply=_extract_reply(result))
 
-    if not req.message:
+    if not req.message and not req.attachments:
         return ChatResponse(reply="Please send a message.", type="message")
+
+    human_msg = _build_message(req)
 
     # ── Stream mode ─────────────────────────────────────────────────────
     if req.stream:
-        return _stream_response(req.message, config)
+        return _stream_response(human_msg, config)
 
     # ── Normal (non-streaming) mode ─────────────────────────────────────
     result = graph.invoke(
-        {"messages": [HumanMessage(content=req.message)]},
+        {"messages": [human_msg]},
         config,
     )
 
@@ -179,43 +208,42 @@ _TOOL_LABELS = {
     "search_wedding_knowledge": "Searching wedding tips",
     "web_search": "Searching the web",
     "fetch_page": "Reading webpage",
-    "update_guest_rsvp": "Updating RSVP",
-    "add_budget_expense": "Recording expense",
-    "add_venue": "Adding venue to list",
+    "create_record": "Creating record",
+    "update_record": "Updating record",
+    "delete_record": "Deleting record",
 }
 
 
-def _stream_response(message: str, config: dict) -> StreamingResponse:
+def _stream_response(message: HumanMessage, config: dict) -> StreamingResponse:
     """Return an SSE stream of token chunks."""
 
     async def generate():
         final_text = ""
         interrupted = False
 
-        async for event in graph.astream_events(
-            {"messages": [HumanMessage(content=message)]},
-            config=config,
-            version="v2",
-        ):
-            kind = event["event"]
+        try:
+            async for event in graph.astream_events(
+                {"messages": [message]},
+                config=config,
+                version="v2",
+            ):
+                kind = event["event"]
 
-            if kind == "on_chat_model_stream":
-                chunk = event["data"]["chunk"]
-                if chunk.content:
-                    final_text += chunk.content
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if chunk.content:
+                        final_text += chunk.content
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
 
-            elif kind == "on_tool_start":
-                tool_name = event["name"]
-                tool_input = event.get("data", {}).get("input", "")
-                print(f"[TOOL START] {tool_name} | input: {str(tool_input)[:200]}", flush=True)
-                label = _TOOL_LABELS.get(tool_name, tool_name)
-                yield f"data: {json.dumps({'type': 'status', 'content': label})}\n\n"
+                elif kind == "on_tool_start":
+                    tool_name = event["name"]
+                    label = _TOOL_LABELS.get(tool_name, tool_name)
+                    yield f"data: {json.dumps({'type': 'status', 'content': label})}\n\n"
 
-            elif kind == "on_tool_end":
-                tool_output = event.get("data", {}).get("output", "")
-                print(f"[TOOL END] output: {str(tool_output)[:300]}", flush=True)
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking'})}\n\n"
+                elif kind == "on_tool_end":
+                    yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking'})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'token', 'content': f'Sorry, something went wrong: {exc}'})}\n\n"
 
         # After streaming completes, check for interrupt
         thread_id = config["configurable"]["thread_id"]

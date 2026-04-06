@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, ListChecks } from 'lucide-react';
+import { Plus, ListChecks, Sparkles } from 'lucide-react';
 import { useWedding } from '@/contexts/WeddingContext';
+import { useChatAction } from '@/contexts/ChatContext';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchChecklist, toggleChecklistItem, deleteChecklistItem } from '@/lib/queries/checklist';
 import { Card } from '@/components/ui/Card';
@@ -22,6 +23,7 @@ const FILTER_OPTIONS = [
 
 export default function ChecklistPage() {
   const { weddingId } = useWedding();
+  const { openChatForPage } = useChatAction();
   const queryClient = useQueryClient();
 
   const [filter, setFilter] = useState<FilterMode>('all');
@@ -111,6 +113,10 @@ export default function ChecklistPage() {
           <ListChecks className="h-7 w-7 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Wedding Checklist</h1>
         </div>
+        <Button variant="clementine" onClick={openChatForPage}>
+          <Sparkles className="w-4 h-4" />
+          Ask Clementine
+        </Button>
         <Button onClick={handleAddNew}>
           <Plus className="h-4 w-4" />
           Add Task

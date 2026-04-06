@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DollarSign, LayoutGrid, List, PieChart, Loader2 } from 'lucide-react';
+import { DollarSign, LayoutGrid, List, PieChart, Loader2, Sparkles } from 'lucide-react';
 import { useWedding } from '@/contexts/WeddingContext';
+import { useChatAction } from '@/contexts/ChatContext';
 import { queryKeys } from '@/lib/queryKeys';
 import { fetchBudgetCategories, fetchBudgetExpenses } from '@/lib/queries/budget';
 import { BudgetOverview } from '@/components/budget/BudgetOverview';
@@ -21,6 +22,7 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
 
 export default function BudgetPage() {
   const { wedding, weddingId } = useWedding();
+  const { openChatForPage } = useChatAction();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
   const {
@@ -61,11 +63,17 @@ export default function BudgetPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Budget</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Track and manage your wedding budget across categories.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Budget</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Track and manage your wedding budget across categories.
+          </p>
+        </div>
+        <Button variant="clementine" onClick={openChatForPage}>
+          <Sparkles className="w-4 h-4" />
+          Ask Clementine
+        </Button>
       </div>
 
       <nav className="flex gap-1 border-b border-gray-200">

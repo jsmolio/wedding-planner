@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
@@ -7,18 +7,21 @@ import { ChatFab } from '../chat/ChatFab';
 import { ChatPanel } from '../chat/ChatPanel';
 import { useChat } from '../../hooks/useChat';
 import { useAuth } from '../../contexts/AuthContext';
-import { ChatContext } from '../../contexts/ChatContext';
+import { useWedding } from '../../contexts/WeddingContext';
+import { ChatContext, getPageGreeting } from '../../contexts/ChatContext';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatWidth, setChatWidth] = useState(420);
+  const [chatWidth, setChatWidth] = useState(840);
   const { session } = useAuth();
+  const { weddingId } = useWedding();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries();
   }, [queryClient]);
-  const chat = useChat(session?.access_token ?? null, invalidateAll);
+  const chat = useChat(session?.access_token ?? null, weddingId, invalidateAll);
 
   const openChat = useCallback((message?: string) => {
     setChatOpen(true);
@@ -27,7 +30,13 @@ export function AppLayout() {
     }
   }, [chat.addAssistantMessage]);
 
-  const chatCtx = useMemo(() => ({ openChat }), [openChat]);
+  const openChatForPage = useCallback(() => {
+    setChatOpen(true);
+    const greeting = getPageGreeting(location.pathname);
+    setTimeout(() => chat.addAssistantMessage(greeting), 350);
+  }, [chat.addAssistantMessage, location.pathname]);
+
+  const chatCtx = useMemo(() => ({ openChat, openChatForPage }), [openChat, openChatForPage]);
 
   return (
     <ChatContext.Provider value={chatCtx}>
@@ -56,6 +65,11 @@ export function AppLayout() {
           send={chat.send}
           handleConfirm={chat.handleConfirm}
           clearError={chat.clearError}
+          conversations={chat.conversations}
+          activeConversationId={chat.activeConversationId}
+          onSelectConversation={chat.selectConversation}
+          onNewConversation={chat.newConversation}
+          onDeleteConversation={chat.removeConversation}
         />
       </div>
     </ChatContext.Provider>

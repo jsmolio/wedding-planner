@@ -134,9 +134,9 @@ export default function VenuesPage() {
               )}
             </Button>
           )}
-          <Button onClick={handleAdd}>
+          <Button variant="clementine" onClick={handleAdd}>
             <Sparkles className="w-4 h-4" />
-            Find Venues
+            Ask Clementine
           </Button>
         </div>
       </div>
@@ -187,9 +187,9 @@ export default function VenuesPage() {
           <p className="text-gray-500 text-sm max-w-sm mx-auto">
             Start adding venues you are considering for your wedding.
           </p>
-          <Button onClick={handleAdd}>
+          <Button variant="clementine" onClick={handleAdd}>
             <Sparkles className="w-4 h-4" />
-            Find Your First Venue
+            Ask Clementine
           </Button>
         </div>
       )}

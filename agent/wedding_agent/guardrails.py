@@ -11,15 +11,12 @@ import re
 
 # ── Patterns ────────────────────────────────────────────────────────────────
 
+# Only redact truly sensitive PII. Emails and phone numbers are
+# expected in a wedding planner (guest contact info) and should not
+# be redacted.
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("[REDACTED_EMAIL]", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")),
     ("[REDACTED_SSN]", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("[REDACTED_CARD]", re.compile(r"\b(?:\d[ -]*?){13,19}\b")),
-    ("[REDACTED_PHONE]", re.compile(
-        r"(?:\+?1[-.\s]?)?"          # optional country code
-        r"(?:\(?\d{3}\)?[-.\s]?)"    # area code
-        r"\d{3}[-.\s]?\d{4}\b"       # subscriber number
-    )),
 ]
 
 

@@ -69,7 +69,10 @@ llm = ChatOpenAI(model="gpt-4.1", temperature=0).bind_tools(
 )
 
 SYSTEM_PROMPT = """\
-You are a friendly, knowledgeable wedding-planning assistant.
+You are Clementine, a friendly and approachable wedding-planning assistant. \
+You speak warmly, use the couple's names when you know them, and keep \
+things conversational — like a knowledgeable friend who happens to be \
+great at wedding planning.
 
 ## How to think (ReAct)
 
@@ -101,10 +104,39 @@ Knowledge:
 • search_wedding_knowledge – search the wedding advice knowledge base
 
 Write (require user confirmation):
-• update_guest_rsvp, add_budget_expense
-• add_venue — when calling this, ALWAYS include the photo_urls parameter \
-with image URLs you collected from fetch_page. This makes the confirmation \
-dialog show venue photos so the user can make an informed decision.
+• create_record(table, data) — create a new record in any table
+• update_record(table, identifier, data) — update a record by id or name
+• delete_record(table, identifier) — delete a record by id or name
+
+Tables: guests, venues, budget_expenses, budget_categories, \
+checklist_items, seating_tables.
+
+## Forms for create/update
+
+When the user wants to create or update a record and you need their \
+input for the fields, emit a form block instead of asking them to type \
+details in plain text. Use this exact format:
+
+```form
+{"action": "create", "table": "guests", "prefill": {"side": "partner1"}}
+```
+
+Or for updates:
+```form
+{"action": "update", "table": "guests", "prefill": {"full_name": "Sarah", "rsvp_status": "accepted"}}
+```
+
+The frontend will render an interactive form with the right fields for \
+that table. Pre-fill any fields you already know (e.g. from context). \
+When the user submits the form, you'll receive the data as a message \
+and should call create_record or update_record with it.
+
+IMPORTANT: Only use the form block when the user needs to provide \
+multiple fields. For simple operations where you already have all the \
+data (like saving a venue from search results), call the tool directly.
+
+When creating venues, ALWAYS include photo_urls with image URLs you \
+collected from fetch_page.
 
 ## Key principles
 
@@ -198,45 +230,71 @@ PII_NOTICE = (
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
+_TABLE_LABELS = {
+    "guests": "Guest",
+    "venues": "Venue",
+    "budget_expenses": "Expense",
+    "budget_categories": "Budget Category",
+    "checklist_items": "Checklist Item",
+    "seating_tables": "Seating Table",
+}
+
+
 def _friendly_description(tc: dict) -> str:
     """Turn a raw tool call into a human-readable markdown confirmation."""
     name = tc["name"]
     args = tc.get("args", {})
 
-    if name == "add_venue":
-        venue = args.get("name", "Unknown venue")
-        parts = [f"### Save {venue}?\n"]
+    if name == "create_record":
+        table = args.get("table", "")
+        data = args.get("data", {})
+        label = _TABLE_LABELS.get(table, table)
 
-        # Show photos
-        photos = args.get("photo_urls") or []
-        for url in photos[:3]:
-            parts.append(f"![{venue}]({url})\n")
+        # Special handling for venues with photos
+        if table == "venues":
+            venue_name = data.get("name", "New venue")
+            parts = [f"### Save {venue_name}?\n"]
+            for url in (data.get("photo_urls") or [])[:3]:
+                parts.append(f"![{venue_name}]({url})\n")
+            details = []
+            if data.get("address"):
+                details.append(f"**Location:** {data['address']}")
+            if data.get("capacity"):
+                details.append(f"**Capacity:** {data['capacity']} guests")
+            if data.get("cost"):
+                details.append(f"**Price:** ${float(data['cost']):,.0f}")
+            if data.get("website_url"):
+                details.append(f"**Website:** [{data['website_url']}]({data['website_url']})")
+            if data.get("notes"):
+                details.append(f"**Notes:** {data['notes']}")
+            parts.append("\n".join(details))
+            return "\n".join(parts)
 
-        details = []
-        if args.get("address"):
-            details.append(f"**Location:** {args['address']}")
-        if args.get("capacity"):
-            details.append(f"**Capacity:** {args['capacity']} guests")
-        if args.get("cost"):
-            details.append(f"**Price:** ${args['cost']:,.0f}")
-        if args.get("website_url"):
-            details.append(f"**Website:** [{args['website_url']}]({args['website_url']})")
-        if args.get("notes"):
-            details.append(f"**Notes:** {args['notes']}")
+        # Generic create
+        display = data.get("full_name") or data.get("name") or data.get("title") or data.get("description") or ""
+        lines = [f"**Create {label}:** {display}"]
+        for k, v in data.items():
+            if k in ("full_name", "name", "title", "description", "wedding_id"):
+                continue
+            if v is not None and v != "" and v != []:
+                lines.append(f"- {k}: {v}")
+        return "\n".join(lines)
 
-        parts.append("\n".join(details))
-        return "\n".join(parts)
+    if name == "update_record":
+        table = args.get("table", "")
+        identifier = args.get("identifier", "")
+        data = args.get("data", {})
+        label = _TABLE_LABELS.get(table, table)
+        lines = [f"**Update {label}:** {identifier}"]
+        for k, v in data.items():
+            lines.append(f"- {k} → {v}")
+        return "\n".join(lines)
 
-    if name == "update_guest_rsvp":
-        guest = args.get("guest_name", "Unknown")
-        status = args.get("status", "unknown")
-        return f'Update RSVP for **{guest}** to **{status}**?'
-
-    if name == "add_budget_expense":
-        cat = args.get("category", "")
-        desc = args.get("description", "")
-        amount = args.get("amount", 0)
-        return f'Record **${amount:,.2f}** expense for "**{desc}**" under **{cat}**?'
+    if name == "delete_record":
+        table = args.get("table", "")
+        identifier = args.get("identifier", "")
+        label = _TABLE_LABELS.get(table, table)
+        return f"**Delete {label}:** {identifier}"
 
     # Fallback
     return f"{name}: {json.dumps(args)}"

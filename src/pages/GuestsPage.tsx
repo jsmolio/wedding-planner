@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Upload, Trash2, Users } from 'lucide-react';
+import { Plus, Upload, Trash2, Users, Sparkles } from 'lucide-react';
 import { useWedding } from '@/contexts/WeddingContext';
+import { useChatAction } from '@/contexts/ChatContext';
 import { fetchGuests, deleteGuest, deleteGuests } from '@/lib/queries/guests';
 import { queryKeys } from '@/lib/queryKeys';
 import { GuestForm } from '@/components/guests/GuestForm';
@@ -14,6 +15,7 @@ import type { Guest } from '@/types/database';
 
 export default function GuestsPage() {
   const { weddingId } = useWedding();
+  const { openChatForPage } = useChatAction();
   const queryClient = useQueryClient();
 
   // Modal state
@@ -143,6 +145,10 @@ export default function GuestsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="clementine" onClick={openChatForPage}>
+            <Sparkles className="w-4 h-4" />
+            <span className="hidden sm:inline">Ask Clementine</span>
+          </Button>
           <Button variant="outline" onClick={() => setCsvOpen(true)}>
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Import CSV</span>

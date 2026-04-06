@@ -1,12 +1,19 @@
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { X, Send, Sparkles, Check, XCircle, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { X, Send, Check, XCircle, AlertCircle, Paperclip, FileText, Image, ChevronDown, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { ClementineLogo } from '../ui/Logo';
 import { marked } from 'marked';
 import { Lightbox } from '../ui/Lightbox';
-import type { ChatMessage } from '../../hooks/useChat';
+import { useQuery } from '@tanstack/react-query';
+import { useWedding } from '../../contexts/WeddingContext';
+import { fetchVenues } from '../../lib/queries/venues';
+import { queryKeys } from '../../lib/queryKeys';
+import { ChatForm } from './ChatForm';
+import type { ChatMessage, FileAttachment } from '../../hooks/useChat';
+import type { Conversation } from '../../types/database';
 
 marked.setOptions({ breaks: true, gfm: true });
 
-function renderMarkdown(text: string): string {
+function renderMarkdown(text: string, savedVenueNames?: Set<string>): string {
   let html = marked.parse(text) as string;
 
   // When multiple images are inside a single <p> (separated by <br>),
@@ -26,19 +33,22 @@ function renderMarkdown(text: string): string {
     },
   );
 
-  // Inject "Add" buttons after venue headings (h3)
+  // Inject "Save" buttons after venue headings (h3), skip if already saved
   html = html.replace(/<h3>([^<]+)<\/h3>/g, (_match, name) => {
+    const isSaved = savedVenueNames?.has(name.trim().toLowerCase());
     const escaped = name.replace(/"/g, '&quot;');
-    return `<div class="chat-venue-header"><h3>${name}</h3>`
-      + `<button class="chat-add-venue-btn" data-venue-name="${escaped}">+ Save</button></div>`;
+    const btn = isSaved
+      ? `<span class="chat-venue-saved">Saved</span>`
+      : `<button class="chat-add-venue-btn" data-venue-name="${escaped}">+ Save</button>`;
+    return `<div class="chat-venue-header"><h3>${name}</h3>${btn}</div>`;
   });
 
   return html;
 }
 
 const MIN_WIDTH = 320;
-const MAX_WIDTH = 800;
-const DEFAULT_WIDTH = 420;
+const MAX_WIDTH = 1200;
+const DEFAULT_WIDTH = 840;
 
 const suggestions = [
   "How many guests have RSVP'd?",
@@ -57,9 +67,14 @@ interface ChatPanelProps {
   pendingConfirm: string | null;
   error: string | null;
   statusText: string | null;
-  send: (text: string) => void;
+  send: (text: string, attachments?: FileAttachment[]) => void;
   handleConfirm: (decision: 'approve' | 'reject') => void;
   clearError: () => void;
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  onSelectConversation: (id: string) => void;
+  onNewConversation: () => void;
+  onDeleteConversation: (id: string) => void;
 }
 
 export function ChatPanel({
@@ -75,11 +90,52 @@ export function ChatPanel({
   send,
   handleConfirm,
   clearError,
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onNewConversation,
+  onDeleteConversation,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isDragging = useRef(false);
   const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
+  const [files, setFiles] = useState<FileAttachment[]>([]);
+  const [showConversations, setShowConversations] = useState(false);
+  const { weddingId } = useWedding();
+  const { data: venues = [] } = useQuery({
+    queryKey: queryKeys.venues(weddingId!),
+    queryFn: () => fetchVenues(weddingId!),
+    enabled: !!weddingId,
+  });
+  const savedVenueNames = useMemo(() => new Set(venues.map(v => v.name.trim().toLowerCase())), [venues]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (!selected) return;
+
+    const newFiles: FileAttachment[] = [];
+    for (const file of Array.from(selected)) {
+      if (file.type.startsWith('image/')) {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        newFiles.push({ name: file.name, type: 'image', content: dataUrl });
+      } else {
+        const text = await file.slice(0, 50000).text();
+        newFiles.push({ name: file.name, type: 'text', content: text });
+      }
+    }
+    setFiles(prev => [...prev, ...newFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Handle clicks on images (lightbox) and "Add" buttons inside rendered markdown
   const handleContentClick = useCallback((e: ReactMouseEvent) => {
@@ -129,7 +185,7 @@ export function ChatPanel({
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, [width]);
+  }, [width, onWidthChange]);
 
   // Auto-scroll to bottom on new content
   useEffect(() => {
@@ -152,9 +208,10 @@ export function ChatPanel({
   }, [open, onClose]);
 
   const handleSubmit = () => {
-    const val = inputRef.current?.value.trim();
-    if (!val) return;
-    send(val);
+    const val = inputRef.current?.value.trim() ?? '';
+    if (!val && !files.length) return;
+    send(val, files.length ? files : undefined);
+    setFiles([]);
     if (inputRef.current) {
       inputRef.current.value = '';
       inputRef.current.style.height = 'auto';
@@ -196,34 +253,79 @@ export function ChatPanel({
             hover:bg-primary-300 active:bg-primary-400 transition-colors z-10"
         />
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-primary-500 to-primary-600 text-white shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-primary-500 to-accent-500 text-white shrink-0">
           <div className="flex items-center gap-3">
-            <Sparkles className="w-5 h-5" />
+            <ClementineLogo className="w-7 h-7" />
             <div>
-              <h2 className="font-semibold text-base leading-tight">Wedding Assistant</h2>
-              <p className="text-xs text-primary-100">Powered by AI</p>
+              <h2 className="font-semibold text-base leading-tight">Clementine</h2>
+              <p className="text-xs text-primary-100">Your wedding planning assistant</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
-            aria-label="Close chat"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowConversations(v => !v)}
+              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              aria-label="Conversations"
+              title="Conversations"
+            >
+              <MessageSquare className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onNewConversation}
+              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              aria-label="New conversation"
+              title="New conversation"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg hover:bg-white/20 transition-colors"
+              aria-label="Close chat"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Conversation list */}
+        {showConversations && (
+          <div className="border-b border-gray-200 bg-white max-h-[240px] overflow-y-auto shrink-0">
+            {conversations.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No conversations yet</p>
+            ) : (
+              conversations.map(convo => (
+                <div
+                  key={convo.id}
+                  className={`flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors text-sm
+                    ${convo.id === activeConversationId ? 'bg-accent-50 text-accent-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                  onClick={() => { onSelectConversation(convo.id); setShowConversations(false); }}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                  <span className="flex-1 truncate">{convo.title}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteConversation(convo.id); }}
+                    className="p-1 rounded hover:bg-red-50 hover:text-red-500 text-gray-300 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Messages */}
         <div ref={scrollRef} onClick={handleContentClick} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {/* Welcome / suggestions */}
           {messages.length === 0 && (
             <div className="text-center py-8">
-              <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-3">
-                <Sparkles className="w-6 h-6 text-primary-500" />
+              <div className="w-14 h-14 rounded-full bg-accent-100 text-accent-500 flex items-center justify-center mx-auto mb-3">
+                <ClementineLogo className="w-9 h-9" />
               </div>
-              <h3 className="font-semibold text-gray-900 mb-1">Hi! I'm your wedding assistant</h3>
+              <h3 className="font-semibold text-gray-900 mb-1">Hey there! I'm Clementine</h3>
               <p className="text-sm text-gray-500 mb-6">
-                I can help you manage guests, track your budget, plan seating, and more.
+                I'm here to help make your wedding planning a breeze — from finding venues to managing guests, budgets, and more. Just ask!
               </p>
               <div className="flex flex-wrap gap-2 justify-center">
                 {suggestions.map(s => (
@@ -277,13 +379,46 @@ export function ChatPanel({
 
             return (
               <div key={msg.id} className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-gray-100 text-gray-800 px-4 py-2.5 text-sm">
-                  <div
-                    className="chat-prose"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                  />
-                  {msg.status === 'streaming' && (
-                    <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle rounded-sm" />
+                <div className="max-w-[85%]">
+                  <div className="rounded-2xl rounded-bl-md bg-gray-100 text-gray-800 px-4 py-2.5 text-sm">
+                    <div
+                      className="chat-prose"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content, savedVenueNames) }}
+                    />
+                    {msg.status === 'streaming' && (
+                      <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-middle rounded-sm" />
+                    )}
+                  </div>
+                  {msg.toolSteps && msg.toolSteps.length > 0 && (
+                    <details className="mt-1 group">
+                      <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-500 flex items-center gap-1 px-1 select-none">
+                        <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                        {msg.toolSteps.length} step{msg.toolSteps.length > 1 ? 's' : ''} taken
+                      </summary>
+                      <div className="mt-1 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {msg.toolSteps.map((step, i) => (
+                            <span key={i} className="inline-flex items-center">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-600 whitespace-nowrap">
+                                {step.label}
+                              </span>
+                              {i < msg.toolSteps!.length - 1 && (
+                                <span className="text-gray-300 mx-0.5 text-xs">&rarr;</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </details>
+                  )}
+                  {msg.formRequest && (
+                    <div className="mt-2">
+                      <ChatForm
+                        form={msg.formRequest}
+                        onSubmit={send}
+                        disabled={isStreaming}
+                      />
+                    </div>
                   )}
                 </div>
               </div>
@@ -302,7 +437,7 @@ export function ChatPanel({
                   onClick={() => handleConfirm('approve')}
                   disabled={isStreaming}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
-                    bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50 transition-colors"
+                    bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 transition-colors"
                 >
                   <Check className="w-4 h-4" /> Approve
                 </button>
@@ -332,12 +467,44 @@ export function ChatPanel({
 
         {/* Input */}
         <div className="border-t border-gray-200 px-4 py-3 shrink-0">
+          {/* File chips */}
+          {files.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {files.map((f, i) => (
+                <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-accent-50 border border-accent-200 text-xs text-accent-600">
+                  {f.type === 'image' ? <Image className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                  <span className="max-w-[120px] truncate">{f.name}</span>
+                  <button onClick={() => removeFile(i)} className="hover:text-accent-800">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".csv,.txt,.json,.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.webp"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!!pendingConfirm}
+              className="shrink-0 w-10 h-10 rounded-xl text-gray-400
+                hover:text-gray-600 hover:bg-gray-100 disabled:opacity-40
+                transition-colors flex items-center justify-center"
+              aria-label="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
             <textarea
               ref={inputRef}
               onKeyDown={handleKeyDown}
               onInput={handleTextareaInput}
-              placeholder={pendingConfirm ? 'Approve or reject the action above...' : 'Ask about your wedding...'}
+              placeholder={pendingConfirm ? 'Approve or reject the action above...' : 'Ask Clementine anything...'}
               disabled={!!pendingConfirm}
               rows={1}
               className="flex-1 resize-none rounded-xl border border-gray-300 px-4 py-2.5 text-sm

@@ -1,5 +1,11 @@
 const AGENT_URL = import.meta.env.VITE_AGENT_URL ?? '/api/agent';
 
+export interface FileAttachment {
+  name: string;
+  type: 'text' | 'image';
+  content: string; // text content or base64 data URL
+}
+
 export interface StreamCallbacks {
   onToken: (token: string) => void;
   onStatus: (status: string) => void;
@@ -13,6 +19,7 @@ export async function streamChat(
   threadId: string,
   accessToken: string | null,
   callbacks: StreamCallbacks,
+  attachments?: FileAttachment[],
 ): Promise<void> {
   const { onToken, onStatus, onConfirm, onDone, onError } = callbacks;
 
@@ -22,10 +29,15 @@ export async function streamChat(
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
+    const body: Record<string, unknown> = { message, thread_id: threadId, stream: true };
+    if (attachments?.length) {
+      body.attachments = attachments;
+    }
+
     const res = await fetch(`${AGENT_URL}/chat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message, thread_id: threadId, stream: true }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -38,10 +50,15 @@ export async function streamChat(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let confirmed = false;
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // Flush remaining buffer
+        buffer += decoder.decode();
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const parts = buffer.split('\n\n');
@@ -59,15 +76,33 @@ export async function streamChat(
             onStatus(payload.content);
           } else if (payload.type === 'confirm') {
             onConfirm(payload.confirm_message);
+            confirmed = true;
           }
-          // 'done' type is handled by stream ending
         } catch {
           // skip malformed SSE lines
         }
       }
     }
 
-    onDone();
+    // Process any remaining data in buffer after stream closes
+    if (buffer.trim()) {
+      const match = buffer.match(/^data:\s*(.+)$/m);
+      if (match) {
+        try {
+          const payload = JSON.parse(match[1]);
+          if (payload.type === 'token') {
+            onToken(payload.content);
+          } else if (payload.type === 'status') {
+            onStatus(payload.content);
+          } else if (payload.type === 'confirm') {
+            onConfirm(payload.confirm_message);
+            confirmed = true;
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    if (!confirmed) onDone();
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('fetch')) {

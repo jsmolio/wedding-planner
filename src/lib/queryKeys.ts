@@ -11,4 +11,6 @@ export const queryKeys = {
   rsvpTokens: (weddingId: string) => ['rsvpTokens', weddingId] as const,
   rsvpPublic: (token: string) => ['rsvpPublic', token] as const,
   profile: (userId: string) => ['profile', userId] as const,
+  conversations: (weddingId: string) => ['conversations', weddingId] as const,
+  conversationMessages: (conversationId: string) => ['conversationMessages', conversationId] as const,
 };

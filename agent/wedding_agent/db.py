@@ -10,15 +10,17 @@ The wedding ID is passed per-request from the frontend (via the graph's
 
 from __future__ import annotations
 
-import contextvars
 import os
 
 _client = None
 
 # Per-request wedding ID set by the server before invoking the graph.
-_current_wedding_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "_current_wedding_id", default=None
-)
+# NOTE: This is a module-level global rather than a contextvars.ContextVar
+# because graph.invoke(Command(resume=...)) runs tools synchronously in a
+# context that doesn't inherit the async request's ContextVar. With a single
+# uvicorn worker (reload mode), this is safe. For production with multiple
+# concurrent requests, switch to passing wedding_id through graph state.
+_current_wedding_id: str | None = None
 
 
 def _is_configured() -> bool:
@@ -43,12 +45,13 @@ def get_client():
 
 def set_wedding_id(wedding_id: str) -> None:
     """Set the wedding ID for the current request."""
-    _current_wedding_id.set(wedding_id)
+    global _current_wedding_id
+    _current_wedding_id = wedding_id
 
 
 def get_wedding_id() -> str:
     """Return the wedding ID for the current request."""
-    wid = _current_wedding_id.get()
+    wid = _current_wedding_id
     if not wid:
         # Fall back to env var for evals / standalone usage
         wid = os.getenv("SUPABASE_WEDDING_ID", "")

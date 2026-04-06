@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MapPin, UtensilsCrossed, Mail,
-  DollarSign, CheckSquare, Heart, Settings, X,
+  DollarSign, CheckSquare, Settings, X,
 } from 'lucide-react';
+import { AppLogo } from '@/components/ui/Logo';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -32,7 +33,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <Heart className="w-6 h-6 text-primary-500 fill-primary-500" />
+            <AppLogo className="w-7 h-7" />
             <span className="text-lg font-bold text-gray-900">Wedding Planner</span>
           </div>
           <button onClick={onClose} className="lg:hidden p-1 rounded hover:bg-gray-100">

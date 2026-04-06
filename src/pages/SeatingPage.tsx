@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Wand2 } from 'lucide-react';
+import { Plus, Wand2, Sparkles } from 'lucide-react';
+import { useChatAction } from '@/contexts/ChatContext';
 import type { TableShape } from '@/types/database';
 
 export default function SeatingPage() {
   const { weddingId } = useWedding();
   const queryClient = useQueryClient();
+  const { openChatForPage } = useChatAction();
   const [showAddTable, setShowAddTable] = useState(false);
   const [newTableName, setNewTableName] = useState('');
   const [newTableShape, setNewTableShape] = useState<TableShape>('round');
@@ -107,6 +109,10 @@ export default function SeatingPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="clementine" onClick={openChatForPage}>
+            <Sparkles className="w-4 h-4" />
+            Ask Clementine
+          </Button>
           <Button variant="outline" onClick={handleAutoAssign} disabled={tables.length === 0}>
             <Wand2 className="w-4 h-4" />
             Auto-Assign
