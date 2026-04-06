@@ -26,6 +26,7 @@ environment variables are set (see ``.env.example``).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -267,11 +268,12 @@ async def health() -> dict:
 def main() -> None:
     import uvicorn
 
+    port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(
         "wedding_agent.server:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        reload=os.environ.get("RENDER") is None,  # only reload in dev
     )
 
 

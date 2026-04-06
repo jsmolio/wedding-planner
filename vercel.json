@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/agent/:path*", "destination": "${AGENT_URL}/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
