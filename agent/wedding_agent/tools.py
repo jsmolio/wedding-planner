@@ -14,7 +14,6 @@ import urllib.parse
 import urllib.request
 import uuid as _uuid
 from collections import Counter
-from html.parser import HTMLParser
 
 from langchain_core.tools import tool
 
@@ -337,16 +336,11 @@ def lookup_seating() -> str:
 
 
 def _web_search(query: str, max_results: int = 10) -> list[dict]:
-    """Search the web using Tavily (preferred) or DuckDuckGo (fallback)."""
-    tavily_key = os.environ.get("TAVILY_API_KEY")
-    if tavily_key:
-        return _tavily_search(query, max_results, tavily_key)
-    return _ddg_search(query, max_results)
-
-
-def _tavily_search(query: str, max_results: int, api_key: str) -> list[dict]:
-    """Search via Tavily API — reliable from cloud servers."""
+    """Search the web using Tavily API."""
     from tavily import TavilyClient
+    api_key = os.environ.get("TAVILY_API_KEY", "")
+    if not api_key:
+        return [{"error": "TAVILY_API_KEY not set"}]
     client = TavilyClient(api_key=api_key)
     response = client.search(query, max_results=max_results)
     return [
@@ -357,57 +351,6 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> list[dict]:
         }
         for r in response.get("results", [])
     ]
-
-
-def _ddg_search(query: str, max_results: int = 10) -> list[dict]:
-    """Fallback: DuckDuckGo HTML search (may be blocked from cloud IPs)."""
-
-    class _ResultParser(HTMLParser):
-        def __init__(self) -> None:
-            super().__init__()
-            self.results: list[dict] = []
-            self._in_title = False
-            self._in_snippet = False
-            self._cur: dict = {}
-
-        def handle_starttag(self, tag: str, attrs: list) -> None:
-            d = dict(attrs)
-            if tag == "a" and "result__a" in d.get("class", ""):
-                self._in_title = True
-                raw = d.get("href", "")
-                m = re.search(r"uddg=([^&]+)", raw)
-                self._cur = {"url": urllib.parse.unquote(m.group(1)) if m else raw}
-            if tag == "a" and "result__snippet" in d.get("class", ""):
-                self._in_snippet = True
-                self._cur.setdefault("description", "")
-
-        def handle_data(self, data: str) -> None:
-            if self._in_title:
-                self._cur["title"] = self._cur.get("title", "") + data
-            if self._in_snippet:
-                self._cur["description"] = self._cur.get("description", "") + data
-
-        def handle_endtag(self, tag: str) -> None:
-            if tag == "a" and self._in_title:
-                self._in_title = False
-            if tag == "a" and self._in_snippet:
-                self._in_snippet = False
-                self.results.append(self._cur)
-                self._cur = {}
-
-    encoded = urllib.parse.quote(query)
-    url = f"https://html.duckduckgo.com/html/?q={encoded}"
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-    })
-    resp = urllib.request.urlopen(req, timeout=15)
-    html = resp.read().decode()
-
-    parser = _ResultParser()
-    parser.feed(html)
-    return parser.results[:max_results]
 
 
 _AGGREGATOR_DOMAINS = {
