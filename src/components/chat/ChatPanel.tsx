@@ -50,10 +50,10 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH = 1200;
 
 const suggestions = [
+  "Show me rustic wedding venues in Colorado",
   "How many guests have RSVP'd?",
   "What's my budget status?",
   "What tasks are coming up?",
-  "Any tips for choosing a venue?",
 ];
 
 interface ChatPanelProps {
