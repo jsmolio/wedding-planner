@@ -39,12 +39,10 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
-from starlette.responses import FileResponse, StreamingResponse  # noqa: E402
+from starlette.responses import StreamingResponse  # noqa: E402
 
 from wedding_agent.db import get_client, set_wedding_id  # noqa: E402
 from wedding_agent.graph import graph  # noqa: E402
-
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="Wedding Planner Agent")
 
@@ -54,12 +52,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/")
-async def index():
-    """Serve the chat UI."""
-    return FileResponse(STATIC_DIR / "index.html")
 
 
 class Attachment(BaseModel):
