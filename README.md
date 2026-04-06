@@ -13,6 +13,7 @@ Built with **React** + **Vite** (frontend), **FastAPI** + **LangGraph** (agent),
 - Node.js 18+
 - Python 3.11+
 - An [OpenAI API key](https://platform.openai.com/api-keys)
+- A [Tavily API key](https://app.tavily.com/) (free tier: 1,000 searches/month)
 - A [Supabase project](https://supabase.com) (for data persistence)
 - (Optional) A [LangSmith API key](https://smith.langchain.com/) for tracing
 
@@ -29,7 +30,7 @@ cd ..
 
 # Configure the agent
 cp agent/.env.example agent/.env
-# Edit agent/.env with your OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+# Edit agent/.env with your OPENAI_API_KEY, TAVILY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 ```
 
 ### Run
@@ -111,7 +112,7 @@ All data tables use `wedding_id` foreign keys. Supabase RLS policies enforce row
 | `lookup_checklist` | Read | Completed/upcoming planning tasks |
 | `lookup_venues` | Read | Saved venues with details and selection status |
 | `lookup_seating` | Read | Seating tables, assignments, unassigned guests |
-| `web_search` | Read | General-purpose web search (DuckDuckGo) |
+| `web_search` | Read | General-purpose web search (Tavily API) |
 | `fetch_page` | Read | Fetch a URL for text content and images |
 | `search_wedding_knowledge` | Read (RAG) | Semantic search over wedding advice knowledge base |
 | `create_record` | Write | Create a record in any table (guests, venues, expenses, etc.) |
