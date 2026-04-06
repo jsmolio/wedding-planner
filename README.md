@@ -1,6 +1,6 @@
 # Wedding Planner
 
-A full-stack wedding planning app with an integrated AI assistant. Manage guests, venues, budgets, seating, and checklists through the UI, or let the AI agent handle it for you via chat.
+A full-stack wedding planning app with **Clementine**, an integrated AI assistant. Manage guests, venues, budgets, seating, and checklists through the UI, or let Clementine handle it for you via chat — she can search the web for venues, manage your guest list, track expenses, and more.
 
 Built with **React** + **Vite** (frontend), **FastAPI** + **LangGraph** (agent), and **Supabase** (database + auth).
 
@@ -61,7 +61,16 @@ React 19 + TypeScript + Tailwind CSS v4 + React Router v7.
 
 **Pages:** Dashboard, Guests, RSVPs, Venues, Seating, Budget, Checklist, Settings
 
-**AI Chat Panel:** A resizable slide-in panel accessible from any page via the floating action button. Supports streaming responses, markdown rendering with image galleries, lightbox image viewing, and human-in-the-loop confirmation dialogs for write operations. Pages can open the chat with a pre-filled assistant message via `ChatContext` (e.g. the "Find Venues" button opens the chat and asks the user about their preferences).
+**Clementine Chat Panel:** A resizable slide-in panel accessible from any page via the floating action button or "Ask Clementine" buttons on each section. Features:
+- Streaming SSE responses with markdown rendering
+- Scrollable image galleries with lightbox viewing
+- Human-in-the-loop confirmation dialogs for write operations
+- Inline forms for creating/updating records (guests, expenses, etc.)
+- File upload support (CSV guest lists, receipt images via GPT-4.1 vision)
+- Conversation persistence in Supabase (create, switch, delete conversations)
+- Reasoning display showing the agent's tool chain per response
+- Page-aware context — Clementine tailors her greeting based on which page you're on
+- Proactive insights card on the Dashboard (pending RSVPs, budget alerts, overdue tasks)
 
 ### Agent
 
@@ -105,11 +114,11 @@ All data tables use `wedding_id` foreign keys. Supabase RLS policies enforce row
 | `web_search` | Read | General-purpose web search (DuckDuckGo) |
 | `fetch_page` | Read | Fetch a URL for text content and images |
 | `search_wedding_knowledge` | Read (RAG) | Semantic search over wedding advice knowledge base |
-| `update_guest_rsvp` | Write | Update a guest's RSVP status |
-| `add_budget_expense` | Write | Record a new expense |
-| `add_venue` | Write | Add a venue to the saved list |
+| `create_record` | Write | Create a record in any table (guests, venues, expenses, etc.) |
+| `update_record` | Write | Update a record by ID or name |
+| `delete_record` | Write | Delete a record by ID or name |
 
-Write tools trigger a human-in-the-loop confirmation dialog before executing.
+Write tools work across all 6 tables (`guests`, `venues`, `budget_expenses`, `budget_categories`, `checklist_items`, `seating_tables`) and trigger a human-in-the-loop confirmation dialog before executing. The agent can also emit inline form blocks to collect structured input from the user before calling write tools.
 
 ---
 
@@ -123,7 +132,7 @@ The eval suite (`agent/evals/`) contains 13 test cases:
 | Answer quality | Response contains expected facts/keywords |
 | Multi-step flows | Venue search calls lookup_venues + web_search + fetch_page in sequence |
 | Image presence | Venue results include markdown images |
-| PII guardrails | Email in input is redacted |
+| PII guardrails | SSN/credit card in input is redacted (emails/phones allowed as guest data) |
 
 Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`, `min_tool_calls`, `has_images`, `excludes_content`.
 
@@ -139,7 +148,9 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 
 **Why general-purpose web_search + fetch_page instead of specialized venue tools?** Early iterations had rigid tools like `search_venues` and `scrape_venue_page` with baked-in logic. Flexible tools + good ReAct reasoning produces better results — the agent decides how to chain them based on what it learns at each step.
 
-**Why regex for PII, not an LLM?** Regex is deterministic, fast, and has zero cost. For a demo it covers the most common patterns. In production I'd layer in a more sophisticated approach (e.g., Presidio or an LLM-based classifier) for edge cases.
+**Why regex for PII, not an LLM?** Regex is deterministic, fast, and has zero cost. Only SSNs and credit cards are redacted — emails and phone numbers are intentionally allowed since they're core wedding planning data (guest contact info). In production I'd layer in a more sophisticated approach (e.g., Presidio) for edge cases.
+
+**Why generic CRUD tools instead of specific ones?** Early versions had `update_guest_rsvp`, `add_budget_expense`, `add_venue` — each hardcoded to one operation. Three generic tools (`create_record`, `update_record`, `delete_record`) cover full CRUD across all 6 tables with less code and more flexibility. The agent's ReAct reasoning handles the specifics.
 
 **Why MemorySaver, not a database?** For a demo, in-memory checkpointing keeps setup simple. The interface is identical to `SqliteSaver` or `PostgresSaver`, so swapping is a one-line change.
 
@@ -149,13 +160,14 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 
 ## What I'd improve with more time
 
-- **Persistent checkpointing** — swap `MemorySaver` for `PostgresSaver` so conversations survive restarts.
+- **Persistent graph checkpointing** — swap `MemorySaver` for `PostgresSaver` so agent thread state survives restarts (conversation messages are already persisted in Supabase, but LangGraph's in-memory checkpointer resets).
 - **Richer RAG** — add more knowledge docs, use hybrid search (BM25 + semantic), and add a reranker.
 - **Multi-turn eval scenarios** — test conversation flows, not just single-turn Q&A.
 - **LLM-as-judge evaluator** — assess answer quality and tone beyond substring matching.
 - **Presidio-based PII detection** — more robust than regex for edge cases.
 - **Observability dashboard** — surface LangSmith metrics in the UI.
-- **More write tools** — update checklist items, manage seating assignments, edit guest details from chat.
+- **Stream cancellation** — abort in-flight SSE streams when switching conversations.
+- **Request-scoped wedding ID** — replace the module-level global with graph state to support concurrent multi-user requests safely.
 
 ---
 
@@ -165,7 +177,7 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 wedding-planner/
 ├── src/                            # React frontend
 │   ├── components/
-│   │   ├── chat/                   # ChatPanel, ChatFab
+│   │   ├── chat/                   # ChatPanel, ChatFab, ChatForm
 │   │   ├── layout/                 # AppLayout, Sidebar, Header
 │   │   ├── ui/                     # Reusable components
 │   │   └── ...                     # Feature components
