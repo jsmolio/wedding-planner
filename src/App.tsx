@@ -8,6 +8,8 @@ import { PublicLayout } from '@/components/layout/PublicLayout';
 import { RsvpPublicPage } from '@/components/rsvp/RsvpPublicPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import DashboardPage from '@/pages/DashboardPage';
 import GuestsPage from '@/pages/GuestsPage';
 import RsvpPage from '@/pages/RsvpPage';
@@ -37,6 +39,8 @@ export default function App() {
               <Route element={<PublicLayout />}>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
               </Route>
 
               {/* Public RSVP page */}
