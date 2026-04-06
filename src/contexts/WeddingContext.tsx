@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { supabase } from '@/config/supabase';
 import { useAuth } from './AuthContext';
 import type { Wedding } from '@/types/database';
@@ -13,16 +13,18 @@ interface WeddingContextType {
 const WeddingContext = createContext<WeddingContextType | undefined>(undefined);
 
 export function WeddingProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [wedding, setWedding] = useState<Wedding | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchWedding = async () => {
+  const fetchWedding = useCallback(async () => {
     if (!user) {
       setWedding(null);
       setLoading(false);
       return;
     }
+
+    setLoading(true);
 
     const { data: membership } = await supabase
       .from('wedding_members')
@@ -41,18 +43,20 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
       setWedding(null);
     }
     setLoading(false);
-  };
+  }, [user]);
 
   useEffect(() => {
+    // Don't fetch until auth has resolved
+    if (authLoading) return;
     fetchWedding();
-  }, [user]);
+  }, [authLoading, fetchWedding]);
 
   return (
     <WeddingContext.Provider
       value={{
         wedding,
         weddingId: wedding?.id ?? null,
-        loading,
+        loading: authLoading || loading,
         refreshWedding: fetchWedding,
       }}
     >

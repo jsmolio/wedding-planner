@@ -38,6 +38,27 @@ export default function DashboardPage() {
     enabled: !!weddingId,
   });
 
+  const completedTasks = checklist.filter((t) => t.is_completed).length;
+  const upcomingTasks = checklist
+    .filter((t) => !t.is_completed)
+    .sort((a, b) => (a.sort_order) - (b.sort_order))
+    .slice(0, 5);
+
+  const overallBudget = wedding?.overall_budget || 0;
+  const insights = useMemo(() => {
+    const tips: string[] = [];
+    const pending = guests.filter(g => g.rsvp_status === 'pending').length;
+    if (pending > 0) tips.push(`You have **${pending} pending RSVP${pending > 1 ? 's'  : ''}** — want me to help follow up?`);
+    const totalSpent = expenses.reduce((s, e) => s + (e.actual_cost || e.estimated_cost || 0), 0);
+    if (overallBudget > 0 && totalSpent / overallBudget > 0.8) tips.push(`You've used **${Math.round(totalSpent / overallBudget * 100)}%** of your budget. I can help review where to save.`);
+    if (overallBudget > 0 && totalSpent / overallBudget < 0.2 && expenses.length < 3) tips.push(`Your budget tracking looks light — upload receipts or tell me about expenses to stay on top of things.`);
+    const overdue = checklist.filter(t => !t.is_completed && t.due_date && new Date(t.due_date) < new Date()).length;
+    if (overdue > 0) tips.push(`**${overdue} task${overdue > 1 ? 's are' : ' is'} past due** on your checklist. Let's review what to prioritize.`);
+    if (guests.length === 0) tips.push(`Your guest list is empty! I can help you import guests from a spreadsheet.`);
+    if (tips.length === 0) tips.push(`Everything's looking great! Let me know if you need help with anything.`);
+    return tips.slice(0, 3);
+  }, [guests, expenses, checklist, overallBudget]);
+
   if (weddingLoading || !wedding || !weddingId) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -50,27 +71,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  const completedTasks = checklist.filter((t) => t.is_completed).length;
-  const upcomingTasks = checklist
-    .filter((t) => !t.is_completed)
-    .sort((a, b) => (a.sort_order) - (b.sort_order))
-    .slice(0, 5);
-
-  const insights = useMemo(() => {
-    const tips: string[] = [];
-    const pending = guests.filter(g => g.rsvp_status === 'pending').length;
-    if (pending > 0) tips.push(`You have **${pending} pending RSVP${pending > 1 ? 's'  : ''}** — want me to help follow up?`);
-    const totalSpent = expenses.reduce((s, e) => s + (e.actual_cost || e.estimated_cost || 0), 0);
-    const budget = wedding.overall_budget || 0;
-    if (budget > 0 && totalSpent / budget > 0.8) tips.push(`You've used **${Math.round(totalSpent / budget * 100)}%** of your budget. I can help review where to save.`);
-    if (budget > 0 && totalSpent / budget < 0.2 && expenses.length < 3) tips.push(`Your budget tracking looks light — upload receipts or tell me about expenses to stay on top of things.`);
-    const overdue = checklist.filter(t => !t.is_completed && t.due_date && new Date(t.due_date) < new Date()).length;
-    if (overdue > 0) tips.push(`**${overdue} task${overdue > 1 ? 's are' : ' is'} past due** on your checklist. Let's review what to prioritize.`);
-    if (guests.length === 0) tips.push(`Your guest list is empty! I can help you import guests from a spreadsheet.`);
-    if (tips.length === 0) tips.push(`Everything's looking great! Let me know if you need help with anything.`);
-    return tips.slice(0, 3);
-  }, [guests, expenses, checklist, wedding.overall_budget]);
 
   return (
     <div className="space-y-6">
