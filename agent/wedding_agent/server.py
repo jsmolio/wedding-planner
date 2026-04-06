@@ -254,7 +254,12 @@ def _stream_response(message: HumanMessage, config: dict) -> StreamingResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "langsmith_tracing": os.environ.get("LANGSMITH_TRACING", "not set"),
+        "langsmith_project": os.environ.get("LANGSMITH_PROJECT", "not set"),
+        "langsmith_key_set": bool(os.environ.get("LANGSMITH_API_KEY")),
+    }
 
 
 
