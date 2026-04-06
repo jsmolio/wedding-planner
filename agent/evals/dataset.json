@@ -1,0 +1,53 @@
+[
+  {
+    "input": "How many guests have accepted the RSVP?",
+    "expected_tool": "lookup_guests",
+    "reference_contains": "98"
+  },
+  {
+    "input": "What's our remaining budget?",
+    "expected_tool": "lookup_budget",
+    "reference_contains": "12,550"
+  },
+  {
+    "input": "What tasks do we still need to do?",
+    "expected_tool": "lookup_checklist",
+    "reference_contains": "florist"
+  },
+  {
+    "input": "What is proper etiquette for plus-ones?",
+    "expected_tool": "search_wedding_knowledge",
+    "reference_contains": "plus-one"
+  },
+  {
+    "input": "Any tips for saving money on our wedding?",
+    "expected_tool": "search_wedding_knowledge",
+    "reference_contains": "budget"
+  },
+  {
+    "input": "How many guests have dietary restrictions?",
+    "expected_tool": "lookup_guests",
+    "reference_contains": "vegetarian"
+  },
+  {
+    "input": "How much did we spend on photography?",
+    "expected_tool": "lookup_budget",
+    "reference_contains": "3,500"
+  },
+  {
+    "input": "When should we send the wedding invitations?",
+    "expected_tool": "search_wedding_knowledge",
+    "reference_contains": "weeks"
+  },
+  {
+    "input": "My email is sarah@example.com and I need budget help",
+    "expected_tool": "lookup_budget",
+    "reference_contains": "REDACTED",
+    "test_guardrails": true
+  },
+  {
+    "input": "What should I do about seating for elderly guests?",
+    "expected_tool": "search_wedding_knowledge",
+    "reference_contains": "mobility"
+  }
+]
