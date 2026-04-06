@@ -373,7 +373,11 @@ def _ddg_search(query: str, max_results: int = 10) -> list[dict]:
 
     encoded = urllib.parse.quote(query)
     url = f"https://html.duckduckgo.com/html/?q={encoded}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    })
     resp = urllib.request.urlopen(req, timeout=15)
     html = resp.read().decode()
 
@@ -466,7 +470,9 @@ def fetch_page(url: str) -> str:
         The URL to fetch.
     """
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        })
         resp = urllib.request.urlopen(req, timeout=15)
         raw = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:
