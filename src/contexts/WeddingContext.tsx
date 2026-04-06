@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { supabase } from '@/config/supabase';
 import { useAuth } from './AuthContext';
 import type { Wedding } from '@/types/database';
@@ -16,20 +16,22 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const [wedding, setWedding] = useState<Wedding | null>(null);
   const [loading, setLoading] = useState(true);
+  const lastUserId = useRef<string | null>(null);
 
-  const fetchWedding = useCallback(async () => {
-    if (!user) {
+  const fetchWedding = useCallback(async (userId: string | null, isInitial: boolean) => {
+    if (!userId) {
       setWedding(null);
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    // Only show loading spinner on initial load, not on tab-switch refetches
+    if (isInitial) setLoading(true);
 
     const { data: membership } = await supabase
       .from('wedding_members')
       .select('wedding_id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single();
 
     if (membership) {
@@ -43,13 +45,24 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
       setWedding(null);
     }
     setLoading(false);
-  }, [user]);
+  }, []);
 
   useEffect(() => {
-    // Don't fetch until auth has resolved
     if (authLoading) return;
-    fetchWedding();
-  }, [authLoading, fetchWedding]);
+
+    const userId = user?.id ?? null;
+    const isNewUser = userId !== lastUserId.current;
+    lastUserId.current = userId;
+
+    // Only refetch if the user actually changed (not just a session refresh)
+    if (isNewUser) {
+      fetchWedding(userId, true);
+    }
+  }, [authLoading, user?.id, fetchWedding]);
+
+  const refreshWedding = useCallback(async () => {
+    if (user?.id) await fetchWedding(user.id, false);
+  }, [user?.id, fetchWedding]);
 
   return (
     <WeddingContext.Provider
@@ -57,7 +70,7 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
         wedding,
         weddingId: wedding?.id ?? null,
         loading: authLoading || loading,
-        refreshWedding: fetchWedding,
+        refreshWedding,
       }}
     >
       {children}
