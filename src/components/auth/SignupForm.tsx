@@ -49,7 +49,7 @@ export function SignupForm() {
   return (
     <Card>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <h2 className="text-xl font-semibold text-center">Create Your Account</h2>
+        <h2 className="text-xl font-semibold text-center">Let's plan your wedding</h2>
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
             {error}
