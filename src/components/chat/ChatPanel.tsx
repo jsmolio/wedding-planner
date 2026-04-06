@@ -48,7 +48,6 @@ function renderMarkdown(text: string, savedVenueNames?: Set<string>): string {
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 1200;
-const DEFAULT_WIDTH = 840;
 
 const suggestions = [
   "How many guests have RSVP'd?",

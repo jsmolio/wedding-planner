@@ -1,5 +1,5 @@
 import { supabase } from '@/config/supabase';
-import type { Venue, VenuePackage } from '@/types/database';
+import type { Venue } from '@/types/database';
 
 export async function fetchVenues(weddingId: string) {
   const { data, error } = await supabase

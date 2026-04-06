@@ -76,7 +76,7 @@ export function useChat(
   const [loadingConversations, setLoadingConversations] = useState(false);
 
   const streamBufferRef = useRef('');
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
   const assistantIdRef = useRef<string>('');
   const toolStepsRef = useRef<ToolStep[]>([]);
 
@@ -234,7 +234,7 @@ export function useChat(
         }
       },
       onConfirm(msg) {
-        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = undefined; }
+        if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = undefined; }
         const content = streamBufferRef.current;
         const id = assistantIdRef.current;
         const toolSteps = toolStepsRef.current.length ? [...toolStepsRef.current] : undefined;
@@ -247,7 +247,7 @@ export function useChat(
         if (content) saveMessage(convoId, 'assistant', content, toolSteps).catch(() => {});
       },
       onDone() {
-        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = undefined; }
+        if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = undefined; }
         const rawContent = streamBufferRef.current;
         const id = assistantIdRef.current;
         const toolSteps = toolStepsRef.current.length ? [...toolStepsRef.current] : undefined;
