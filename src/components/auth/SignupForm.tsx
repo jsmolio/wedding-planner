@@ -7,6 +7,7 @@ import { supabase } from '@/config/supabase';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
+import { ClementineLogo } from '@/components/ui/Logo';
 
 interface SignupFormData {
   fullName: string;
@@ -20,6 +21,7 @@ export function SignupForm() {
   const { refreshWedding } = useWedding();
   const navigate = useNavigate();
   const [error, setError] = useState('');
+  const [settingUp, setSettingUp] = useState(false);
   const { register, handleSubmit, formState: { isSubmitting } } = useForm<SignupFormData>();
 
   const onSubmit = async (data: SignupFormData) => {
@@ -34,6 +36,9 @@ export function SignupForm() {
         return;
       }
 
+      // Show loading screen while setting up
+      setSettingUp(true);
+
       // Create wedding + membership + seed data via RPC (bypasses RLS)
       const { error: rpcError } = await supabase.rpc('setup_new_wedding', {
         p_partner1_name: data.fullName,
@@ -45,9 +50,26 @@ export function SignupForm() {
       await refreshWedding();
       navigate('/dashboard');
     } catch (err) {
+      setSettingUp(false);
       setError(err instanceof Error ? err.message : 'Failed to create account');
     }
   };
+
+  if (settingUp) {
+    return (
+      <Card>
+        <div className="text-center py-12 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-accent-100 text-accent-500 flex items-center justify-center mx-auto animate-pulse">
+            <ClementineLogo className="w-10 h-10" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900">Setting up your wedding</h3>
+            <p className="text-sm text-gray-500 mt-1">Clementine is preparing everything for you...</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card>

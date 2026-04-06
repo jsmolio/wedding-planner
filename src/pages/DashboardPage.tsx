@@ -17,7 +17,7 @@ import { CheckSquare } from 'lucide-react';
 
 
 export default function DashboardPage() {
-  const { wedding, weddingId, loading: weddingLoading } = useWedding();
+  const { wedding, weddingId } = useWedding();
   const { openChatForPage } = useChatAction();
 
   const { data: guests = [] } = useQuery({
@@ -59,18 +59,7 @@ export default function DashboardPage() {
     return tips.slice(0, 3);
   }, [guests, expenses, checklist, overallBudget]);
 
-  if (weddingLoading || !wedding || !weddingId) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center space-y-3">
-          <div className="w-12 h-12 rounded-full bg-accent-100 text-accent-500 flex items-center justify-center mx-auto animate-pulse">
-            <ClementineLogo className="w-7 h-7" />
-          </div>
-          <p className="text-sm text-gray-500">Setting up your wedding...</p>
-        </div>
-      </div>
-    );
-  }
+  if (!wedding || !weddingId) return null;
 
   return (
     <div className="space-y-6">
