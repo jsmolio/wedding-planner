@@ -200,13 +200,17 @@ export function useChat(
     // Persist user message
     saveMessage(convoId, 'user', displayText).catch(() => {});
 
-    // Auto-title on first message
-    if (trimmed && conversations.find((c) => c.id === convoId)?.title === 'New conversation') {
-      const title = trimmed.length > 40 ? trimmed.slice(0, 40) + '...' : trimmed;
-      updateConversationTitle(convoId, title).catch(() => {});
-      setConversations((prev) =>
-        prev.map((c) => (c.id === convoId ? { ...c, title } : c)),
-      );
+    // Auto-title on first user message (check via state updater to avoid stale closure)
+    if (trimmed) {
+      setConversations((prev) => {
+        const convo = prev.find((c) => c.id === convoId);
+        if (convo && convo.title === 'New conversation') {
+          const title = trimmed.length > 40 ? trimmed.slice(0, 40) + '...' : trimmed;
+          updateConversationTitle(convoId, title).catch(() => {});
+          return prev.map((c) => (c.id === convoId ? { ...c, title } : c));
+        }
+        return prev;
+      });
     }
 
     streamChat(trimmed || '', convoId, accessToken, {
