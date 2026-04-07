@@ -146,52 +146,50 @@ export function ChatPanel({
       const venueName = target.getAttribute('data-venue-name');
       if (!venueName) return;
 
-      // Find the venue's section in the DOM (everything between this h3 and the next h3)
-      const header = target.closest('.chat-venue-header');
-      if (!header) return;
+      // Get the entire message bubble's text and images
+      const bubble = target.closest('.chat-prose');
+      if (!bubble) return;
+      const fullText = bubble.textContent ?? '';
 
-      // Collect text content and images from sibling elements until the next venue header
-      let el = header.nextElementSibling;
-      const lines: string[] = [];
-      const photos: string[] = [];
-      while (el && !el.classList?.contains('chat-venue-header')) {
-        // Collect images from galleries
-        if (el.classList?.contains('chat-gallery')) {
-          el.querySelectorAll('img').forEach(img => {
-            if (img.src && !photos.includes(img.src)) photos.push(img.src);
-          });
-        }
-        // Collect text lines
-        const text = el.textContent?.trim();
-        if (text) lines.push(text);
-        el = el.nextElementSibling;
-      }
-
-      // Parse structured data from the text lines
-      const getText = (prefix: string) => {
-        const line = lines.find(l => l.startsWith(prefix));
-        return line ? line.slice(prefix.length).trim() : '';
-      };
-      const parseCost = (s: string) => {
-        const m = s.replace(/[$,]/g, '').match(/\d+/);
+      // Best-effort field extraction via regex on full text
+      const match = (pattern: RegExp) => fullText.match(pattern)?.[1]?.trim() ?? '';
+      const parseNum = (s: string) => {
+        const m = s.replace(/[$,]/g, '').match(/[\d.]+/);
         return m ? parseFloat(m[0]) : null;
       };
-      const parseCapacity = (s: string) => {
-        const m = s.match(/\d+/);
-        return m ? parseInt(m[0]) : null;
-      };
 
-      // Extract a link URL if present
-      const linkEl = header.parentElement?.querySelector('a[href^="http"]') as HTMLAnchorElement | null;
+      // Collect photos from the nearest gallery above or after this heading
+      const photos: string[] = [];
+      const header = target.closest('.chat-venue-header');
+      if (header) {
+        // Check adjacent gallery elements
+        const gallery = header.nextElementSibling?.classList?.contains('chat-gallery')
+          ? header.nextElementSibling
+          : header.previousElementSibling?.classList?.contains('chat-gallery')
+            ? header.previousElementSibling
+            : null;
+        gallery?.querySelectorAll('img').forEach(img => {
+          if (img.src && !photos.includes(img.src)) photos.push(img.src);
+        });
+      }
+
+      // Extract first external link near this venue section
+      const links = Array.from(bubble.querySelectorAll('a[href^="http"]')) as HTMLAnchorElement[];
+      // Find a link near this venue heading (within ~500 chars in the text)
+      const venueIdx = fullText.indexOf(venueName);
+      const websiteLink = links.find(a => {
+        const linkIdx = fullText.indexOf(a.textContent ?? '', venueIdx);
+        return linkIdx >= 0 && linkIdx - venueIdx < 500;
+      });
 
       const venue = {
         wedding_id: weddingId,
         name: venueName,
-        address: getText('Location:'),
-        capacity: parseCapacity(getText('Capacity:')),
-        cost: parseCost(getText('Price:')),
-        website_url: linkEl?.href ?? getText('Website:'),
-        notes: getText('Why it fits:'),
+        address: match(/(?:Location|Address):\s*(.+?)(?:\n|$)/i),
+        capacity: parseNum(match(/Capacity:\s*(.+?)(?:\n|$)/i)) as number | null,
+        cost: parseNum(match(/Price:\s*(.+?)(?:\n|$)/i)) as number | null,
+        website_url: websiteLink?.href ?? '',
+        notes: match(/Why it fits:\s*(.+?)(?:\n|$)/i),
         photo_urls: photos,
       };
 
