@@ -164,8 +164,6 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 - **LLM-as-judge evaluator** — assess answer quality and tone beyond substring matching.
 - **Presidio-based PII detection** — more robust than regex for edge cases.
 - **Observability dashboard** — surface LangSmith metrics in the UI.
-- **Stream cancellation** — abort in-flight SSE streams when switching conversations.
-- **Request-scoped wedding ID** — replace the module-level global with graph state to support concurrent multi-user requests safely.
 
 ---
 
