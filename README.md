@@ -159,7 +159,6 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 
 ## What I'd improve with more time
 
-- **Persistent graph checkpointing** — swap `MemorySaver` for `PostgresSaver` so agent thread state survives restarts (conversation messages are already persisted in Supabase, but LangGraph's in-memory checkpointer resets).
 - **Richer RAG** — add more knowledge docs, use hybrid search (BM25 + semantic), and add a reranker.
 - **Multi-turn eval scenarios** — test conversation flows, not just single-turn Q&A.
 - **LLM-as-judge evaluator** — assess answer quality and tone beyond substring matching.
