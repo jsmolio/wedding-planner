@@ -141,7 +141,7 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 
 ## Design decisions
 
-**Why a wedding planner?** It's a domain with natural read/write separation (checking data vs. updating RSVPs), a clear knowledge base, and enough structure to demonstrate routing without artificial complexity.
+**Why a wedding planner?** I recently got engaged and thought it would be fun to build an AI assistant that could actually help me plan my wedding — discovering venues, managing the budget, tracking the guest list, and more. Wedding planning is expensive, stressful, and full of moving parts. An AI that deeply understands what you want, has access to all your wedding data, and is available any time feels like something genuinely valuable — not just a demo project. The domain also happens to be a great fit technically: it has natural read/write separation, a rich knowledge base, and enough structure to demonstrate agentic reasoning without artificial complexity.
 
 **Why separate read/write tool nodes?** Rather than interrupting on every tool call, the graph only pauses for write operations. This keeps the UX fast for lookups while adding a safety gate for mutations — a pattern that maps well to real business apps.
 
