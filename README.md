@@ -153,8 +153,6 @@ Evaluators: `correct_tool`, `answer_contains`, `pii_handled`, `multi_tool_flow`,
 
 **Why generic CRUD tools instead of specific ones?** Early versions had `update_guest_rsvp`, `add_budget_expense`, `add_venue` — each hardcoded to one operation. Three generic tools (`create_record`, `update_record`, `delete_record`) cover full CRUD across all 6 tables with less code and more flexibility. The agent's ReAct reasoning handles the specifics.
 
-**Why MemorySaver, not a database?** For a demo, in-memory checkpointing keeps setup simple. The interface is identical to `SqliteSaver` or `PostgresSaver`, so swapping is a one-line change.
-
 **Why server-side wedding ID resolution?** The frontend sends the user's Supabase JWT, and the server resolves the wedding ID via `wedding_members`. This prevents a malicious client from querying another user's wedding data, even though the agent uses a service-role key that bypasses RLS.
 
 ---
