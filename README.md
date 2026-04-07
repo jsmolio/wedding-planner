@@ -7,6 +7,7 @@ Built with **React** + **Vite** (frontend), **FastAPI** + **LangGraph** (agent),
 ---
 
 ## Quickstart
+- FWIW this application is hosted and accessible via Vercel at https://wedding-planner-4hhd.vercel.app/login. If you don't want to jump through the hoops of setting the project up to run locally and procuring all the necessary API keys, feel free to play around with it there.
 
 ### Prerequisites
 
