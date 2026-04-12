@@ -83,6 +83,7 @@ def lookup_guests() -> str:
     return json.dumps(
         {
             "total_invited": total,
+            "total_with_plus_ones": total + plus_ones,
             "rsvp_accepted": accepted,
             "rsvp_declined": declined,
             "rsvp_pending": pending,
@@ -530,6 +531,16 @@ def create_record(table: str, data: dict) -> str:
     if table in _WEDDING_SCOPED:
         row["wedding_id"] = _wid()
 
+    # Sanitize numeric fields — extract first number from strings like "$5,300–$12,500"
+    _NUMERIC_FIELDS = {
+        "cost", "capacity", "estimated_cost", "actual_cost", "allocated_amount",
+        "sort_order", "position_x", "position_y", "seat_number",
+    }
+    for key in _NUMERIC_FIELDS:
+        if key in row and isinstance(row[key], str):
+            cleaned = re.sub(r"[^\d.]", "", row[key].split("–")[0].split("-")[0])
+            row[key] = float(cleaned) if cleaned else None
+
     # For budget_expenses, resolve category name → id if needed
     if table == "budget_expenses" and "category" in row:
         cat_name = row.pop("category")
@@ -610,6 +621,7 @@ def delete_record(table: str, identifier: str) -> str:
 def _stub_guests() -> str:
     return json.dumps({
         "total_invited": 150,
+        "total_with_plus_ones": 172,
         "rsvp_accepted": 98,
         "rsvp_declined": 12,
         "rsvp_pending": 40,

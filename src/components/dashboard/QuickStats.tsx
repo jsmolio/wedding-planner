@@ -10,7 +10,9 @@ interface QuickStatsProps {
 }
 
 export function QuickStats({ guests, expenses, overallBudget }: QuickStatsProps) {
-  const totalGuests = guests.length;
+  const totalInvites = guests.length;
+  const plusOnes = guests.filter((g) => g.has_plus_one).length;
+  const totalHeadcount = totalInvites + plusOnes;
   const accepted = guests.filter((g) => g.rsvp_status === 'accepted').length;
   const declined = guests.filter((g) => g.rsvp_status === 'declined').length;
   const pending = guests.filter((g) => g.rsvp_status === 'pending').length;
@@ -18,7 +20,7 @@ export function QuickStats({ guests, expenses, overallBudget }: QuickStatsProps)
   const remaining = overallBudget - totalSpent;
 
   const stats = [
-    { label: 'Total Guests', value: totalGuests, icon: Users, color: 'bg-blue-100 text-blue-600' },
+    { label: 'Total Headcount', value: totalHeadcount, icon: Users, color: 'bg-blue-100 text-blue-600', subtitle: plusOnes > 0 ? `${totalInvites} invites + ${plusOnes} plus ones` : undefined },
     { label: 'Accepted', value: accepted, icon: CheckCircle, color: 'bg-green-100 text-green-600' },
     { label: 'Declined', value: declined, icon: XCircle, color: 'bg-red-100 text-red-600' },
     { label: 'Pending', value: pending, icon: Clock, color: 'bg-yellow-100 text-yellow-600' },
@@ -32,7 +34,7 @@ export function QuickStats({ guests, expenses, overallBudget }: QuickStatsProps)
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-      {stats.map(({ label, value, icon: Icon, color }) => (
+      {stats.map(({ label, value, icon: Icon, color, subtitle }) => (
         <Card key={label}>
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${color}`}>
@@ -41,6 +43,7 @@ export function QuickStats({ guests, expenses, overallBudget }: QuickStatsProps)
             <div>
               <p className="text-xl font-bold">{value}</p>
               <p className="text-xs text-gray-500">{label}</p>
+              {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
             </div>
           </div>
         </Card>

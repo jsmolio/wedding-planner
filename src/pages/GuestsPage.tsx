@@ -93,10 +93,12 @@ export default function GuestsPage() {
   // Stats
   const stats = useMemo(() => {
     const total = guests.length;
+    const plusOnes = guests.filter((g) => g.has_plus_one).length;
+    const totalWithPlusOnes = total + plusOnes;
     const accepted = guests.filter((g) => g.rsvp_status === 'accepted').length;
     const declined = guests.filter((g) => g.rsvp_status === 'declined').length;
     const pending = guests.filter((g) => g.rsvp_status === 'pending').length;
-    return { total, accepted, declined, pending };
+    return { total, plusOnes, totalWithPlusOnes, accepted, declined, pending };
   }, [guests]);
 
   // Handlers
@@ -161,13 +163,23 @@ export default function GuestsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-2 text-gray-500 text-sm">
             <Users className="w-4 h-4" />
-            Total
+            Invites
           </div>
           <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Users className="w-4 h-4" />
+            Total Headcount
+          </div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalWithPlusOnes}</p>
+          {stats.plusOnes > 0 && (
+            <p className="text-xs text-gray-400 mt-0.5">incl. {stats.plusOnes} plus ones</p>
+          )}
         </div>
         <div className="bg-white rounded-lg border p-4">
           <div className="flex items-center gap-2 text-sm">
