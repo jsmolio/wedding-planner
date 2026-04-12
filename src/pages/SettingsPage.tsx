@@ -39,7 +39,11 @@ export default function SettingsPage() {
     if (!wedding) return;
     const { error } = await supabase
       .from('weddings')
-      .update(data)
+      .update({
+        ...data,
+        wedding_date: data.wedding_date || null,
+        rsvp_deadline: data.rsvp_deadline || null,
+      })
       .eq('id', wedding.id);
     if (error) throw error;
     await refreshWedding();
