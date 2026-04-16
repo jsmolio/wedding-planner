@@ -222,11 +222,11 @@ def _stream_response(message: HumanMessage, config: dict) -> StreamingResponse:
             ):
                 kind = event["event"]
 
-                # if kind == "on_chat_model_stream":
-                #     chunk = event["data"]["chunk"]
-                #     if chunk.content:
-                #         final_text += chunk.content
-                #         yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if chunk.content:
+                        final_text += chunk.content
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk.content})}\n\n"
 
                 if kind == "on_tool_start":
                     tool_name = event["name"]
