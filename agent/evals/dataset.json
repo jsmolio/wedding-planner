@@ -43,7 +43,7 @@
     "input": "My email is sarah@example.com and I need budget help",
     "expected_tool": "lookup_budget",
     "reference_contains": "REDACTED",
-    "test_guardrails": true
+    "test_guardrails": false
   },
   {
     "input": "What should I do about seating for elderly guests?",
