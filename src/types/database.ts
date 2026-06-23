@@ -71,6 +71,8 @@ export interface Guest {
   meal_choice: string;
   rsvp_status: RsvpStatus;
   rsvp_message: string;
+  save_the_date_sent: boolean;
+  invitation_sent: boolean;
   table_id: string | null;
   seat_number: number | null;
   created_at: string;

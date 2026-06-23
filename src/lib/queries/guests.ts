@@ -32,6 +32,16 @@ export async function updateGuest(id: string, updates: Partial<Guest>) {
   return data as Guest;
 }
 
+export async function bulkUpdateGuests(ids: string[], updates: Partial<Guest>) {
+  const { data, error } = await supabase
+    .from('guests')
+    .update(updates)
+    .in('id', ids)
+    .select();
+  if (error) throw error;
+  return data as Guest[];
+}
+
 export async function deleteGuest(id: string) {
   const { error } = await supabase.from('guests').delete().eq('id', id);
   if (error) throw error;

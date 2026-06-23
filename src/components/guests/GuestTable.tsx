@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Trash2, Mail, Phone } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Trash2, Mail, Phone, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import type { Guest } from '@/types/database';
 
-type SortField = 'full_name' | 'side' | 'group_name' | 'rsvp_status' | 'meal_choice';
+type SentField = 'save_the_date_sent' | 'invitation_sent';
+type SortField = 'full_name' | 'side' | 'group_name' | 'rsvp_status' | 'meal_choice' | SentField;
 type SortDirection = 'asc' | 'desc';
 
 interface GuestTableProps {
   guests: Guest[];
   onEdit: (guest: Guest) => void;
   onDelete: (guest: Guest) => void;
+  onToggleSent: (guest: Guest, field: SentField, value: boolean) => void;
   selectedIds: Set<string>;
   onSelect: (ids: Set<string>) => void;
 }
@@ -27,7 +29,34 @@ const sideLabels: Record<string, string> = {
   mutual: 'Mutual',
 };
 
-export function GuestTable({ guests, onEdit, onDelete, selectedIds, onSelect }: GuestTableProps) {
+function SentToggle({
+  sent,
+  onClick,
+  label,
+}: {
+  sent: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={sent}
+      title={sent ? `${label} sent — click to mark not sent` : `Mark ${label.toLowerCase()} sent`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+        sent
+          ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
+          : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600'
+      }`}
+    >
+      {sent ? <Check className="w-3 h-3" /> : <Mail className="w-3 h-3" />}
+      {sent ? 'Sent' : 'Not sent'}
+    </button>
+  );
+}
+
+export function GuestTable({ guests, onEdit, onDelete, onToggleSent, selectedIds, onSelect }: GuestTableProps) {
   const [sortField, setSortField] = useState<SortField>('full_name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -122,6 +151,8 @@ export function GuestTable({ guests, onEdit, onDelete, selectedIds, onSelect }: 
               <SortableHeader field="group_name">Group</SortableHeader>
               <SortableHeader field="rsvp_status">RSVP</SortableHeader>
               <SortableHeader field="meal_choice">Meal</SortableHeader>
+              <SortableHeader field="save_the_date_sent">Save the Date</SortableHeader>
+              <SortableHeader field="invitation_sent">Invitation</SortableHeader>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -187,6 +218,24 @@ export function GuestTable({ guests, onEdit, onDelete, selectedIds, onSelect }: 
                   {guest.meal_choice
                     ? guest.meal_choice.charAt(0).toUpperCase() + guest.meal_choice.slice(1)
                     : '--'}
+                </td>
+                <td className="px-4 py-3">
+                  <SentToggle
+                    sent={guest.save_the_date_sent}
+                    label="Save the date"
+                    onClick={() =>
+                      onToggleSent(guest, 'save_the_date_sent', !guest.save_the_date_sent)
+                    }
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <SentToggle
+                    sent={guest.invitation_sent}
+                    label="Invitation"
+                    onClick={() =>
+                      onToggleSent(guest, 'invitation_sent', !guest.invitation_sent)
+                    }
+                  />
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">

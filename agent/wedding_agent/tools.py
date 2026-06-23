@@ -38,9 +38,12 @@ def lookup_guests() -> str:
     """Look up the guest list for the current wedding.
 
     Returns guest count, RSVP breakdown, dietary restriction summary,
-    and individual guest records with names, RSVP status, party size,
-    and dietary needs.  Always include guest names when the user asks
-    who is on the list.
+    save-the-date / invitation mailing progress, and individual guest
+    records with names, RSVP status, party size, dietary needs, and
+    whether each guest has been sent a save-the-date and an invitation.
+    Use the save_the_date_sent / invitation_sent fields to answer who
+    still needs a save-the-date or invitation.  Always include guest
+    names when the user asks who is on the list.
     """
     if not is_live():
         return _stub_guests()
@@ -48,7 +51,7 @@ def lookup_guests() -> str:
     rows = (
         _sb()
         .table("guests")
-        .select("full_name, email, rsvp_status, dietary_restrictions, has_plus_one, plus_one_name, group_name, side")
+        .select("full_name, email, rsvp_status, dietary_restrictions, has_plus_one, plus_one_name, group_name, side, save_the_date_sent, invitation_sent")
         .eq("wedding_id", _wid())
         .order("full_name")
         .execute()
@@ -60,6 +63,8 @@ def lookup_guests() -> str:
     declined = sum(1 for r in rows if r["rsvp_status"] == "declined")
     pending = sum(1 for r in rows if r["rsvp_status"] == "pending")
     plus_ones = sum(1 for r in rows if r["has_plus_one"])
+    save_the_dates_sent = sum(1 for r in rows if r.get("save_the_date_sent"))
+    invitations_sent = sum(1 for r in rows if r.get("invitation_sent"))
 
     # Dietary breakdown
     dietary_counts: dict[str, int] = Counter()
@@ -76,6 +81,8 @@ def lookup_guests() -> str:
             "plus_one": r.get("plus_one_name") or None,
             "group": r.get("group_name") or None,
             "side": r.get("side"),
+            "save_the_date_sent": bool(r.get("save_the_date_sent")),
+            "invitation_sent": bool(r.get("invitation_sent")),
         }
         for r in rows
     ]
@@ -88,6 +95,8 @@ def lookup_guests() -> str:
             "rsvp_declined": declined,
             "rsvp_pending": pending,
             "plus_ones_expected": plus_ones,
+            "save_the_dates_sent": save_the_dates_sent,
+            "invitations_sent": invitations_sent,
             "dietary_restrictions": dict(dietary_counts),
             "guests": guests,
         }

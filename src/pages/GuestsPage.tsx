@@ -1,9 +1,15 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Upload, Trash2, Users, Sparkles } from 'lucide-react';
+import { Plus, Upload, Trash2, Users, Sparkles, Mail, MailCheck } from 'lucide-react';
 import { useWedding } from '@/contexts/WeddingContext';
 import { useChatAction } from '@/contexts/ChatContext';
-import { fetchGuests, deleteGuest, deleteGuests } from '@/lib/queries/guests';
+import {
+  fetchGuests,
+  deleteGuest,
+  deleteGuests,
+  updateGuest,
+  bulkUpdateGuests,
+} from '@/lib/queries/guests';
 import { queryKeys } from '@/lib/queryKeys';
 import { GuestForm } from '@/components/guests/GuestForm';
 import { GuestFilters, type GuestFiltersState } from '@/components/guests/GuestFilters';
@@ -33,6 +39,8 @@ export default function GuestsPage() {
     rsvpStatus: '',
     side: '',
     group: '',
+    saveTheDate: '',
+    invitation: '',
   });
 
   // Fetch guests
@@ -64,6 +72,25 @@ export default function GuestsPage() {
     },
   });
 
+  // Toggle a single guest's mailing status
+  const toggleSentMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Guest> }) =>
+      updateGuest(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.guests(weddingId!) });
+    },
+  });
+
+  // Bulk mark selected guests as sent / not sent
+  const bulkSentMutation = useMutation({
+    mutationFn: ({ ids, updates }: { ids: string[]; updates: Partial<Guest> }) =>
+      bulkUpdateGuests(ids, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.guests(weddingId!) });
+      setSelectedIds(new Set());
+    },
+  });
+
   // Unique group names for filter dropdown
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -86,6 +113,10 @@ export default function GuestsPage() {
       if (filters.rsvpStatus && g.rsvp_status !== filters.rsvpStatus) return false;
       if (filters.side && g.side !== filters.side) return false;
       if (filters.group && g.group_name !== filters.group) return false;
+      if (filters.saveTheDate === 'sent' && !g.save_the_date_sent) return false;
+      if (filters.saveTheDate === 'not_sent' && g.save_the_date_sent) return false;
+      if (filters.invitation === 'sent' && !g.invitation_sent) return false;
+      if (filters.invitation === 'not_sent' && g.invitation_sent) return false;
       return true;
     });
   }, [guests, filters]);
@@ -98,7 +129,18 @@ export default function GuestsPage() {
     const accepted = guests.filter((g) => g.rsvp_status === 'accepted').length;
     const declined = guests.filter((g) => g.rsvp_status === 'declined').length;
     const pending = guests.filter((g) => g.rsvp_status === 'pending').length;
-    return { total, plusOnes, totalWithPlusOnes, accepted, declined, pending };
+    const saveTheDatesSent = guests.filter((g) => g.save_the_date_sent).length;
+    const invitationsSent = guests.filter((g) => g.invitation_sent).length;
+    return {
+      total,
+      plusOnes,
+      totalWithPlusOnes,
+      accepted,
+      declined,
+      pending,
+      saveTheDatesSent,
+      invitationsSent,
+    };
   }, [guests]);
 
   // Handlers
@@ -126,6 +168,19 @@ export default function GuestsPage() {
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
     bulkDeleteMutation.mutate(Array.from(selectedIds));
+  };
+
+  const handleToggleSent = (
+    guest: Guest,
+    field: 'save_the_date_sent' | 'invitation_sent',
+    value: boolean
+  ) => {
+    toggleSentMutation.mutate({ id: guest.id, updates: { [field]: value } });
+  };
+
+  const handleBulkMarkSent = (field: 'save_the_date_sent' | 'invitation_sent') => {
+    if (selectedIds.size === 0) return;
+    bulkSentMutation.mutate({ ids: Array.from(selectedIds), updates: { [field]: true } });
   };
 
   if (!weddingId) {
@@ -201,6 +256,30 @@ export default function GuestsPage() {
         </div>
       </div>
 
+      {/* Mailing Progress */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg border p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Mail className="w-4 h-4" />
+            Save-the-Dates Sent
+          </div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            {stats.saveTheDatesSent}
+            <span className="text-base font-normal text-gray-400"> / {stats.total}</span>
+          </p>
+        </div>
+        <div className="bg-white rounded-lg border p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <MailCheck className="w-4 h-4" />
+            Invitations Sent
+          </div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            {stats.invitationsSent}
+            <span className="text-base font-normal text-gray-400"> / {stats.total}</span>
+          </p>
+        </div>
+      </div>
+
       {/* Filters */}
       <GuestFilters filters={filters} onFilterChange={setFilters} groups={groups} />
 
@@ -210,6 +289,24 @@ export default function GuestsPage() {
           <span className="text-sm font-medium text-primary-800">
             {selectedIds.size} guest{selectedIds.size === 1 ? '' : 's'} selected
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleBulkMarkSent('save_the_date_sent')}
+            loading={bulkSentMutation.isPending}
+          >
+            <Mail className="w-4 h-4" />
+            Mark Save-the-Date Sent
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleBulkMarkSent('invitation_sent')}
+            loading={bulkSentMutation.isPending}
+          >
+            <MailCheck className="w-4 h-4" />
+            Mark Invitation Sent
+          </Button>
           <Button
             variant="danger"
             size="sm"
@@ -239,6 +336,7 @@ export default function GuestsPage() {
           guests={filteredGuests}
           onEdit={handleEdit}
           onDelete={setDeletingGuest}
+          onToggleSent={handleToggleSent}
           selectedIds={selectedIds}
           onSelect={setSelectedIds}
         />
