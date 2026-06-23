@@ -22,6 +22,8 @@ interface GuestFormData {
   dietary_restrictions: string;
   meal_choice: string;
   rsvp_status: RsvpStatus;
+  save_the_date_sent: boolean;
+  invitation_sent: boolean;
 }
 
 interface GuestFormProps {
@@ -64,6 +66,8 @@ const defaultValues: GuestFormData = {
   dietary_restrictions: '',
   meal_choice: '',
   rsvp_status: 'pending',
+  save_the_date_sent: false,
+  invitation_sent: false,
 };
 
 export function GuestForm({ open, onClose, guest, weddingId }: GuestFormProps) {
@@ -97,6 +101,8 @@ export function GuestForm({ open, onClose, guest, weddingId }: GuestFormProps) {
           dietary_restrictions: guest.dietary_restrictions,
           meal_choice: guest.meal_choice,
           rsvp_status: guest.rsvp_status,
+          save_the_date_sent: guest.save_the_date_sent,
+          invitation_sent: guest.invitation_sent,
         });
       } else {
         reset(defaultValues);
@@ -226,6 +232,27 @@ export function GuestForm({ open, onClose, guest, weddingId }: GuestFormProps) {
           placeholder="e.g. Gluten free, nut allergy"
           {...register('dietary_restrictions')}
         />
+
+        {/* Mailing Status */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-gray-700">Mailing Status</p>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-4 w-4"
+              {...register('save_the_date_sent')}
+            />
+            Save-the-date sent
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-4 w-4"
+              {...register('invitation_sent')}
+            />
+            Invitation sent
+          </label>
+        </div>
 
         {/* Error */}
         {mutationError && (

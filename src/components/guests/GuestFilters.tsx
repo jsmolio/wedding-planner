@@ -3,11 +3,15 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import type { RsvpStatus, GuestSide } from '@/types/database';
 
+export type SentFilter = '' | 'sent' | 'not_sent';
+
 export interface GuestFiltersState {
   search: string;
   rsvpStatus: RsvpStatus | '';
   side: GuestSide | '';
   group: string;
+  saveTheDate: SentFilter;
+  invitation: SentFilter;
 }
 
 interface GuestFiltersProps {
@@ -28,6 +32,18 @@ const sideOptions = [
   { value: 'partner1', label: 'Partner 1' },
   { value: 'partner2', label: 'Partner 2' },
   { value: 'mutual', label: 'Mutual' },
+];
+
+const saveTheDateOptions = [
+  { value: '', label: 'Save the Date: All' },
+  { value: 'sent', label: 'Save the Date: Sent' },
+  { value: 'not_sent', label: 'Save the Date: Not sent' },
+];
+
+const invitationOptions = [
+  { value: '', label: 'Invitation: All' },
+  { value: 'sent', label: 'Invitation: Sent' },
+  { value: 'not_sent', label: 'Invitation: Not sent' },
 ];
 
 export function GuestFilters({ filters, onFilterChange, groups }: GuestFiltersProps) {
@@ -70,6 +86,16 @@ export function GuestFilters({ filters, onFilterChange, groups }: GuestFiltersPr
           options={groupOptions}
           value={filters.group}
           onChange={(e) => update({ group: e.target.value })}
+        />
+        <Select
+          options={saveTheDateOptions}
+          value={filters.saveTheDate}
+          onChange={(e) => update({ saveTheDate: e.target.value as SentFilter })}
+        />
+        <Select
+          options={invitationOptions}
+          value={filters.invitation}
+          onChange={(e) => update({ invitation: e.target.value as SentFilter })}
         />
       </div>
     </div>

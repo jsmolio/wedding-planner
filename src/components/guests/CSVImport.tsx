@@ -21,15 +21,31 @@ interface CSVRow {
   address: string;
   side: string;
   group: string;
+  save_the_date: string;
+  invitation: string;
 }
 
-const EXPECTED_COLUMNS = ['name', 'email', 'phone', 'address', 'side', 'group'];
+const EXPECTED_COLUMNS = [
+  'name',
+  'email',
+  'phone',
+  'address',
+  'side',
+  'group',
+  'save_the_date',
+  'invitation',
+];
 
 function normalizeSide(value: string): GuestSide {
   const lower = value.trim().toLowerCase();
   if (lower === 'partner1' || lower === 'partner 1') return 'partner1';
   if (lower === 'partner2' || lower === 'partner 2') return 'partner2';
   return 'mutual';
+}
+
+function normalizeBool(value: string): boolean {
+  const lower = value.trim().toLowerCase();
+  return ['yes', 'y', 'true', '1', 'sent', 'x'].includes(lower);
 }
 
 export function CSVImport({ open, onClose, weddingId }: CSVImportProps) {
@@ -94,6 +110,8 @@ export function CSVImport({ open, onClose, weddingId }: CSVImportProps) {
           address: row['address'] ?? '',
           side: row['side'] ?? '',
           group: row['group'] ?? '',
+          save_the_date: row['save_the_date'] ?? '',
+          invitation: row['invitation'] ?? '',
         }));
 
         const validRows = parsed.filter((r) => r.name.trim() !== '');
@@ -124,6 +142,8 @@ export function CSVImport({ open, onClose, weddingId }: CSVImportProps) {
           address: row.address.trim(),
           side: normalizeSide(row.side),
           group_name: row.group.trim(),
+          save_the_date_sent: normalizeBool(row.save_the_date),
+          invitation_sent: normalizeBool(row.invitation),
         });
         results.push(result);
       }
@@ -146,6 +166,8 @@ export function CSVImport({ open, onClose, weddingId }: CSVImportProps) {
           </code>
           <p className="mt-2 text-blue-700">
             Only <strong>name</strong> is required. Side values: partner1, partner2, or mutual.
+            For <strong>save_the_date</strong> and <strong>invitation</strong>, use yes/no (or
+            true/false) to mark what's already been sent.
           </p>
         </div>
 
